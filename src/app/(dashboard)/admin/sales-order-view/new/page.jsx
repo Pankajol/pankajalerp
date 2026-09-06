@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, Suspense, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import axios from "axios";
+import ProtectedPage from "@/components/ProtectedPage";
 import ItemSection from "@/components/ItemSection";
 import CustomerSearch from "@/components/CustomerSearch";
 import CustomerAddressSelector from "@/components/CustomerAddressSelector";
@@ -156,9 +157,15 @@ function getVariantImageUrl(item, variantSku) {
 
 export default function SalesOrderPage() {
   return (
+       <ProtectedPage
+      module="Sales Order"
+      action="create"
+    >
     <Suspense fallback={<div className="flex items-center justify-center min-h-screen text-gray-400">Loading Order Form...</div>}>
+
       <SalesOrderForm />
     </Suspense>
+    </ProtectedPage>
   );
 }
 

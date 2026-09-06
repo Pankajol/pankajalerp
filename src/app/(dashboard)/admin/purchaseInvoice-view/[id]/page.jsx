@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import axios from 'axios';
+import ProtectedPage from '@/components/ProtectedPage';
 import { useParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
@@ -93,6 +94,7 @@ export default function InvoiceDetail() {
   const itemTotals = calculateItemTotals();
 
   return (
+    <ProtectedPage module="PurchaseInvoice" action="view">
     <div className="container mx-auto p-6">
       <Link href="/admin/purchaseInvoice-view">
         <button className="mb-6 px-4 py-2 bg-gray-300 rounded hover:bg-gray-400 transition">
@@ -405,6 +407,7 @@ export default function InvoiceDetail() {
         </Link>
       </div>
     </div>
+    </ProtectedPage>
   );
 }
 

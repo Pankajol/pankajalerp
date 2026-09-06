@@ -3,7 +3,7 @@ import "./globals.css";
 import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css'
 import PhoneSafeView from "@/components/PhoneSafeView";
-
+import { AuthProvider } from "@/context/AuthContext";
 const geistSans = localFont({
   src: "./fonts/GeistVF.woff",
   variable: "--font-geist-sans",
@@ -44,6 +44,7 @@ export default function RootLayout({ children }) {
           backgroundColor: "#F8FAFC",
         }}
       >
+         <AuthProvider>
         {/* main scrollable content – no extra safe‑area padding here */}
         <PhoneSafeView />
         <div className="app-safe-view flex-1 overflow-y-auto bg-gray-50 dark:bg-gray-900">
@@ -59,6 +60,7 @@ export default function RootLayout({ children }) {
           }}
           toastClassName="!rounded-xl !shadow-lg !font-sans"
         />
+        </AuthProvider>
       </body>
     </html>
   );

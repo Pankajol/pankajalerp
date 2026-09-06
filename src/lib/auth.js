@@ -61,30 +61,56 @@ export function getTokenFromHeader(req) {
 }
 
 
-export function hasPermission(user, moduleName, action) {
+
+
+/**
+ * ✅ NEW: Validate user from request token
+ * Returns { user, error, status }
+ */
+export async function validateUser(req) {
+  const token = getTokenFromHeader(req);
+  if (!token) {
+    return { error: "Token missing", status: 401, user: null };
+  }
+  try {
+    const user = await verifyJWT(token);
+    if (!user) {
+      return { error: "Invalid token", status: 401, user: null };
+    }
+    // Optional: add additional checks (e.g., user is active, etc.)
+    return { user, error: null, status: 200 };
+  } catch (err) {
+    return { error: "Invalid token", status: 401, user: null };
+  }
+}
+
+export function hasPermission(user, moduleName, action = "view") {
   if (!user) return false;
 
-  // ✅ Company full access
-  if (user.type === "company") return true;
+  // Company Login → Full Access
+  if (user.type === "company") {
+    return true;
+  }
 
-  // ✅ Admin full access
+  // Super Admin / Masters → Full Access
   if (
-    user.role === "Company" ||
-    user.role === "Admin" ||
-    user.role === "admin" ||
-    user.role?.name === "Admin"
+    Array.isArray(user.roles) &&
+    user.roles.some((role) => ["Admin"].includes(role))
   ) {
     return true;
   }
 
-  // ✅ MODULE BASED CHECK (IMPORTANT FIX)
+  // Module Permission
   const module =
-    user.modules?.[moduleName] ||
-    user.modules?.[moduleName.toLowerCase()];
+    user.modules instanceof Map
+      ? user.modules.get(moduleName)
+      : user.modules?.[moduleName];
 
-  if (!module || !module.selected) return false;
-  if (action === "read") action = "view";
-  return module.permissions?.[action] === true;
+  if (!module) return false;
+
+  if (!module.selected) return false;
+
+  return !!module.permissions?.[action];
 }
 
 

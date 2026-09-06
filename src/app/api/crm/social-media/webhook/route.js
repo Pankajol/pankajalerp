@@ -1,8 +1,9 @@
 // app/api/social-media/webhook/route.js
 import dbConnect from "@/lib/db";
-import { getCompanyFromApiKey } from "@/lib/auth"; // you'll need to pass company API key in header
+import Company from "@/models/Company";
 import Lead from "@/models/crm/load";
 import SocialMediaLead from "@/models/crm/SocialMediaLead";
+import { handleEvent } from "@/lib/services/automationEngine";
 import { NextResponse } from "next/server";
 
 export async function POST(req) {
@@ -10,7 +11,9 @@ export async function POST(req) {
   const { searchParams } = new URL(req.url);
   const platform = searchParams.get('platform');
   const apiKey = req.headers.get('x-api-key'); // company identifies via API key
-  const company = await getCompanyFromApiKey(apiKey);
+  const company = apiKey
+    ? await Company.findOne({ webhookSecret: apiKey }).select("_id")
+    : null;
   if (!company) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const rawBody = await req.json();

@@ -1,5 +1,5 @@
 import dbConnect from "@/lib/db";
-import { getCompanyIdFromToken } from "@/lib/auth";
+import { getTokenFromHeader, verifyJWT } from "@/lib/auth";
 import Lead from "@/models/crm/load";
 import Opportunity from "@/models/crm/Opportunity";
 import Customer from "@/models/CustomerModel";
@@ -8,7 +8,11 @@ import { NextResponse } from "next/server";
 
 export async function GET(req) {
   await dbConnect();
-  const companyId = getCompanyIdFromToken(req);
+  const user = verifyJWT(getTokenFromHeader(req));
+  if (!user?.companyId) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  const companyId = user.companyId;
   const { searchParams } = new URL(req.url);
   const q = searchParams.get("q");
 

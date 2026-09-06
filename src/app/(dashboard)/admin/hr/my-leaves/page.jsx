@@ -8,9 +8,9 @@ function Toast({ toasts }) {
     <div style={{ position: "fixed", top: 24, right: 24, zIndex: 9999, display: "flex", flexDirection: "column", gap: 10 }}>
       {toasts.map(t => (
         <div key={t.id} style={{
-          background: t.type === "success" ? "#0a1628" : "#1a0a0a",
+          background: t.type === "success" ? "#f0fdf4" : "#fef2f2",
           border: `1px solid ${t.type === "success" ? "#22c55e55" : "#ef444455"}`,
-          color: t.type === "success" ? "#22c55e" : "#ef4444",
+          color: t.type === "success" ? "#166534" : "#991b1b",
           padding: "12px 20px", borderRadius: 12, fontSize: 13,
           fontFamily: "'DM Mono', monospace",
           boxShadow: `0 8px 32px ${t.type === "success" ? "#22c55e22" : "#ef444422"}`,
@@ -45,26 +45,27 @@ function BalanceCard({ type, count, delay }) {
   const pct = Math.min((count / max) * 100, 100);
   return (
     <div style={{
-      background: "#0d1829", border: "1px solid rgba(255,255,255,0.07)",
+      background: "#ffffff", border: "1px solid rgba(0,0,0,0.06)",
       borderRadius: 16, padding: "20px 20px 16px",
+      boxShadow: "0 2px 8px rgba(0,0,0,0.02)",
       animation: `lm-fadeUp 0.5s ease ${delay}s both`,
     }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 14 }}>
         <div>
-          <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, color: "#475569", textTransform: "uppercase", letterSpacing: 2, marginBottom: 6 }}>
+          <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, color: "#5e6f8d", textTransform: "uppercase", letterSpacing: 2, marginBottom: 6 }}>
             {cfg.label}
           </div>
-          <div style={{ fontSize: 34, fontWeight: 800, color: "#f1f5f9", lineHeight: 1, fontFamily: "'Syne', sans-serif" }}>
+          <div style={{ fontSize: 34, fontWeight: 800, color: "#0b1a2a", lineHeight: 1, fontFamily: "'Syne', sans-serif" }}>
             {count}
           </div>
-          <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, color: "#334155", marginTop: 3 }}>days left</div>
+          <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, color: "#7a8aa3", marginTop: 3 }}>days left</div>
         </div>
         <div style={{ width: 40, height: 40, borderRadius: 10, background: cfg.bg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, color: cfg.color }}>
           {cfg.icon}
         </div>
       </div>
       {/* Progress bar */}
-      <div style={{ height: 3, background: "rgba(255,255,255,0.06)", borderRadius: 99 }}>
+      <div style={{ height: 3, background: "#e9edf4", borderRadius: 99 }}>
         <div style={{ height: "100%", width: `${pct}%`, background: cfg.color, borderRadius: 99, transition: "width 1s ease" }} />
       </div>
     </div>
@@ -85,18 +86,18 @@ function LeaveRow({ leave, index }) {
   return (
     <>
       <tr onClick={() => setOpen(!open)} style={{
-        borderBottom: "1px solid rgba(255,255,255,0.04)",
+        borderBottom: "1px solid rgba(0,0,0,0.04)",
         cursor: "pointer",
         transition: "background 0.15s",
-        background: open ? "rgba(255,255,255,0.03)" : "transparent",
+        background: open ? "rgba(0,0,0,0.02)" : "transparent",
         animation: `lm-fadeUp 0.4s ease ${index * 0.05}s both`,
       }}
-        onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.03)"}
-        onMouseLeave={e => e.currentTarget.style.background = open ? "rgba(255,255,255,0.03)" : "transparent"}
+        onMouseEnter={e => e.currentTarget.style.background = "rgba(0,0,0,0.02)"}
+        onMouseLeave={e => e.currentTarget.style.background = open ? "rgba(0,0,0,0.02)" : "transparent"}
       >
         <td style={{ padding: "14px 20px" }}>
-          <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 13, color: "#cbd5e1" }}>{fromDate}</div>
-          <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, color: "#475569", marginTop: 2 }}>to {toDate}</div>
+          <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 13, color: "#0b1a2a" }}>{fromDate}</div>
+          <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, color: "#7a8aa3", marginTop: 2 }}>to {toDate}</div>
         </td>
         <td style={{ padding: "14px 12px" }}>
           <span style={{ background: type.bg, color: type.color, border: `1px solid ${type.color}33`,
@@ -105,7 +106,7 @@ function LeaveRow({ leave, index }) {
           </span>
         </td>
         <td style={{ padding: "14px 12px" }}>
-          <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 12, color: "#64748b" }}>
+          <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 12, color: "#5e6f8d" }}>
             {days}d
           </span>
         </td>
@@ -116,21 +117,21 @@ function LeaveRow({ leave, index }) {
             {status.icon} {leave.status || "Pending"}
           </span>
         </td>
-        <td style={{ padding: "14px 16px", color: "#334155", fontSize: 12 }}>
+        <td style={{ padding: "14px 16px", color: "#7a8aa3", fontSize: 12 }}>
           {open ? "▲" : "▼"}
         </td>
       </tr>
       {open && (
-        <tr style={{ background: "rgba(255,255,255,0.02)", borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
+        <tr style={{ background: "rgba(0,0,0,0.02)", borderBottom: "1px solid rgba(0,0,0,0.04)" }}>
           <td colSpan={5} style={{ padding: "12px 20px 16px" }}>
-            <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 12, color: "#64748b", marginBottom: 4 }}>
+            <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 12, color: "#5e6f8d", marginBottom: 4 }}>
               REASON
             </div>
-            <div style={{ fontSize: 14, color: "#94a3b8" }}>{leave.reason || "—"}</div>
+            <div style={{ fontSize: 14, color: "#2c3e50" }}>{leave.reason || "—"}</div>
             {leave.status === "Rejected" && leave.rejectionReason && (
               <div style={{ marginTop: 10, padding: "10px 14px", background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)", borderRadius: 8 }}>
                 <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, color: "#ef4444", marginBottom: 4 }}>REJECTION REASON</div>
-                <div style={{ fontSize: 13, color: "#fca5a5" }}>{leave.rejectionReason}</div>
+                <div style={{ fontSize: 13, color: "#b91c1c" }}>{leave.rejectionReason}</div>
               </div>
             )}
           </td>
@@ -173,41 +174,41 @@ function ApplyDrawer({ open, onClose, onSuccess }) {
     <>
       {/* Backdrop */}
       <div onClick={onClose} style={{
-        position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)",
+        position: "fixed", inset: 0, background: "rgba(0,0,0,0.3)", backdropFilter: "blur(4px)",
         zIndex: 100, opacity: open ? 1 : 0, pointerEvents: open ? "all" : "none",
         transition: "opacity 0.3s ease",
       }} />
       {/* Drawer */}
       <div style={{
         position: "fixed", top: 0, right: 0, bottom: 0, width: "min(420px, 95vw)",
-        background: "#0a0f1e", borderLeft: "1px solid rgba(255,255,255,0.08)",
+        background: "#ffffff", borderLeft: "1px solid rgba(0,0,0,0.08)",
         zIndex: 101, padding: "32px 28px", overflowY: "auto",
         transform: open ? "translateX(0)" : "translateX(100%)",
         transition: "transform 0.35s cubic-bezier(0.4,0,0.2,1)",
-        boxShadow: "-20px 0 60px rgba(0,0,0,0.5)",
+        boxShadow: "-20px 0 60px rgba(0,0,0,0.1)",
       }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 28 }}>
           <div>
-            <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, color: "#475569", textTransform: "uppercase", letterSpacing: 2 }}>New Request</div>
-            <h2 style={{ fontFamily: "'Syne', sans-serif", fontSize: 22, fontWeight: 800, color: "#f1f5f9", margin: "4px 0 0" }}>Apply Leave</h2>
+            <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, color: "#5e6f8d", textTransform: "uppercase", letterSpacing: 2 }}>New Request</div>
+            <h2 style={{ fontFamily: "'Syne', sans-serif", fontSize: 22, fontWeight: 800, color: "#0b1a2a", margin: "4px 0 0" }}>Apply Leave</h2>
           </div>
-          <button onClick={onClose} style={{ background: "rgba(255,255,255,0.06)", border: "none", color: "#94a3b8", width: 36, height: 36, borderRadius: 10, cursor: "pointer", fontSize: 16 }}>✕</button>
+          <button onClick={onClose} style={{ background: "transparent", border: "none", color: "#7a8aa3", width: 36, height: 36, borderRadius: 10, cursor: "pointer", fontSize: 16 }}>✕</button>
         </div>
 
         <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 20 }}>
 
           {/* Leave type selector */}
           <div>
-            <label style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, color: "#475569", textTransform: "uppercase", letterSpacing: 1.5, display: "block", marginBottom: 10 }}>Leave Type</label>
+            <label style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, color: "#5e6f8d", textTransform: "uppercase", letterSpacing: 1.5, display: "block", marginBottom: 10 }}>Leave Type</label>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
               {Object.entries(LEAVE_TYPES).map(([key, c]) => (
                 <button type="button" key={key}
                   onClick={() => setFormData(p => ({ ...p, leaveType: key }))}
                   style={{
                     padding: "10px 12px", borderRadius: 10, cursor: "pointer",
-                    border: `1px solid ${formData.leaveType === key ? c.color : "rgba(255,255,255,0.07)"}`,
-                    background: formData.leaveType === key ? c.bg : "rgba(255,255,255,0.02)",
-                    color: formData.leaveType === key ? c.color : "#64748b",
+                    border: `1px solid ${formData.leaveType === key ? c.color : "rgba(0,0,0,0.1)"}`,
+                    background: formData.leaveType === key ? c.bg : "transparent",
+                    color: formData.leaveType === key ? c.color : "#2c3e50",
                     fontFamily: "'Syne', sans-serif", fontWeight: 600, fontSize: 13,
                     transition: "all 0.2s", display: "flex", alignItems: "center", gap: 6,
                   }}>
@@ -221,14 +222,14 @@ function ApplyDrawer({ open, onClose, onSuccess }) {
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
             {[["fromDate", "From Date"], ["toDate", "To Date"]].map(([field, label]) => (
               <div key={field}>
-                <label style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, color: "#475569", textTransform: "uppercase", letterSpacing: 1.5, display: "block", marginBottom: 8 }}>{label}</label>
+                <label style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, color: "#5e6f8d", textTransform: "uppercase", letterSpacing: 1.5, display: "block", marginBottom: 8 }}>{label}</label>
                 <input type="date" required value={formData[field]}
                   onChange={e => setFormData(p => ({ ...p, [field]: e.target.value }))}
                   style={{
                     width: "100%", padding: "10px 12px", borderRadius: 10,
-                    background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.1)",
-                    color: "#e2e8f0", fontFamily: "'DM Mono', monospace", fontSize: 13,
-                    outline: "none", colorScheme: "dark",
+                    background: "#f8faff", border: "1px solid rgba(0,0,0,0.1)",
+                    color: "#0b1a2a", fontFamily: "'DM Mono', monospace", fontSize: 13,
+                    outline: "none",
                   }}
                 />
               </div>
@@ -238,21 +239,21 @@ function ApplyDrawer({ open, onClose, onSuccess }) {
           {/* Days preview */}
           {days > 0 && (
             <div style={{ padding: "12px 16px", background: cfg.bg, border: `1px solid ${cfg.color}33`, borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-              <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 12, color: "#64748b" }}>Duration</span>
+              <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 12, color: "#5e6f8d" }}>Duration</span>
               <span style={{ fontFamily: "'Syne', sans-serif", fontWeight: 700, fontSize: 16, color: cfg.color }}>{days} day{days > 1 ? "s" : ""}</span>
             </div>
           )}
 
           {/* Reason */}
           <div>
-            <label style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, color: "#475569", textTransform: "uppercase", letterSpacing: 1.5, display: "block", marginBottom: 8 }}>Reason</label>
+            <label style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, color: "#5e6f8d", textTransform: "uppercase", letterSpacing: 1.5, display: "block", marginBottom: 8 }}>Reason</label>
             <textarea required rows={4} placeholder="Briefly describe your reason..."
               value={formData.reason}
               onChange={e => setFormData(p => ({ ...p, reason: e.target.value }))}
               style={{
                 width: "100%", padding: "12px", borderRadius: 10,
-                background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.1)",
-                color: "#e2e8f0", fontFamily: "'DM Mono', monospace", fontSize: 13,
+                background: "#f8faff", border: "1px solid rgba(0,0,0,0.1)",
+                color: "#0b1a2a", fontFamily: "'DM Mono', monospace", fontSize: 13,
                 outline: "none", resize: "vertical",
               }}
             />
@@ -321,10 +322,10 @@ export default function LeaveManagement() {
         @keyframes lm-spin    { to { transform:rotate(360deg); } }
         @keyframes lm-shimmer { 0%{background-position:-400px 0} 100%{background-position:400px 0} }
         .lm-page * { box-sizing: border-box; }
-        .lm-page { min-height:100vh; background:#060b14; font-family:'Syne',sans-serif; color:#e2e8f0; padding:32px 20px 60px; }
-        .lm-skeleton { background:linear-gradient(90deg,#1e293b 25%,#2d3f55 50%,#1e293b 75%); background-size:400px 100%; animation:lm-shimmer 1.4s infinite; border-radius:8px; }
-        .lm-filter-btn { padding:6px 16px; border-radius:20px; border:1px solid rgba(255,255,255,0.08); background:transparent; color:#64748b; font-family:'DM Mono',monospace; font-size:12px; cursor:pointer; transition:all 0.2s; }
-        .lm-filter-btn:hover { border-color:rgba(255,255,255,0.2); color:#94a3b8; }
+        .lm-page { min-height:100vh; background:#f2f6fc; font-family:'Syne',sans-serif; color:#0b1a2a; padding:32px 20px 60px; }
+        .lm-skeleton { background:linear-gradient(90deg,#dce3ed 25%,#eef4fa 50%,#dce3ed 75%); background-size:400px 100%; animation:lm-shimmer 1.4s infinite; border-radius:8px; }
+        .lm-filter-btn { padding:6px 16px; border-radius:20px; border:1px solid rgba(0,0,0,0.08); background:transparent; color:#5e6f8d; font-family:'DM Mono',monospace; font-size:12px; cursor:pointer; transition:all 0.2s; }
+        .lm-filter-btn:hover { border-color:rgba(0,0,0,0.2); color:#2c3e50; }
         .lm-filter-btn.active { background:rgba(56,189,248,0.1); border-color:#38bdf855; color:#38bdf8; }
         table { border-collapse:collapse; width:100%; }
       `}</style>
@@ -338,9 +339,9 @@ export default function LeaveManagement() {
           {/* ── Header ── */}
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 32, animation: "lm-fadeUp 0.4s ease" }}>
             <div>
-              <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, color: "#475569", textTransform: "uppercase", letterSpacing: 2, marginBottom: 4 }}>HR Portal</div>
-              <h1 style={{ fontSize: 32, fontWeight: 800, color: "#f8fafc", margin: 0 }}>My Leaves</h1>
-              <p style={{ margin: "6px 0 0", fontFamily: "'DM Mono', monospace", fontSize: 13, color: "#475569" }}>
+              <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, color: "#5e6f8d", textTransform: "uppercase", letterSpacing: 2, marginBottom: 4 }}>HR Portal</div>
+              <h1 style={{ fontSize: 32, fontWeight: 800, color: "#0b1a2a", margin: 0 }}>My Leaves</h1>
+              <p style={{ margin: "6px 0 0", fontFamily: "'DM Mono', monospace", fontSize: 13, color: "#5e6f8d" }}>
                 {new Date().toLocaleDateString("en-IN", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}
               </p>
             </div>
@@ -374,13 +375,13 @@ export default function LeaveManagement() {
           </div>
 
           {/* ── Leave History ── */}
-          <div style={{ background: "#0d1829", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 20, overflow: "hidden", animation: "lm-fadeUp 0.5s ease 0.25s both" }}>
+          <div style={{ background: "#ffffff", border: "1px solid rgba(0,0,0,0.06)", borderRadius: 20, overflow: "hidden", boxShadow: "0 4px 16px rgba(0,0,0,0.02)", animation: "lm-fadeUp 0.5s ease 0.25s both" }}>
 
             {/* Table header */}
-            <div style={{ padding: "20px 20px 16px", borderBottom: "1px solid rgba(255,255,255,0.06)", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
+            <div style={{ padding: "20px 20px 16px", borderBottom: "1px solid rgba(0,0,0,0.05)", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
               <div>
-                <h2 style={{ fontFamily: "'Syne', sans-serif", fontWeight: 700, fontSize: 18, color: "#f1f5f9", margin: 0 }}>Leave History</h2>
-                <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, color: "#475569", marginTop: 3 }}>
+                <h2 style={{ fontFamily: "'Syne', sans-serif", fontWeight: 700, fontSize: 18, color: "#0b1a2a", margin: 0 }}>Leave History</h2>
+                <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, color: "#5e6f8d", marginTop: 3 }}>
                   {filtered.length} record{filtered.length !== 1 ? "s" : ""}
                 </div>
               </div>
@@ -399,15 +400,15 @@ export default function LeaveManagement() {
             ) : filtered.length === 0 ? (
               <div style={{ padding: "60px 20px", textAlign: "center" }}>
                 <div style={{ fontSize: 40, marginBottom: 12 }}>◎</div>
-                <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 13, color: "#334155" }}>No {filter !== "All" ? filter.toLowerCase() : ""} leave records found</div>
+                <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 13, color: "#5e6f8d" }}>No {filter !== "All" ? filter.toLowerCase() : ""} leave records found</div>
               </div>
             ) : (
               <div style={{ overflowX: "auto" }}>
                 <table>
                   <thead>
-                    <tr style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+                    <tr style={{ borderBottom: "1px solid rgba(0,0,0,0.05)" }}>
                       {["Date Range", "Type", "Days", "Status", ""].map((h, i) => (
-                        <th key={i} style={{ padding: "12px 20px", textAlign: "left", fontFamily: "'DM Mono', monospace", fontSize: 10, color: "#334155", textTransform: "uppercase", letterSpacing: 1.5, fontWeight: 500 }}>
+                        <th key={i} style={{ padding: "12px 20px", textAlign: "left", fontFamily: "'DM Mono', monospace", fontSize: 10, color: "#5e6f8d", textTransform: "uppercase", letterSpacing: 1.5, fontWeight: 500 }}>
                           {h}
                         </th>
                       ))}

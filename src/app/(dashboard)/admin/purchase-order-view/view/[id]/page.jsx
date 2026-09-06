@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
+import ProtectedPage from '@/components/ProtectedPage';
 import axios from 'axios';
 import { 
   FaArrowLeft, FaUser, FaCalendarAlt, FaBoxOpen, 
@@ -138,6 +139,7 @@ export default function PurchaseOrderView() {
   );
 
   return (
+    <ProtectedPage module="PurchaseOrder" action="view">
     <div className="min-h-screen bg-gray-50 py-6 sm:py-8 px-4 sm:px-6">
       <div className="max-w-7xl mx-auto">
         
@@ -428,6 +430,7 @@ export default function PurchaseOrderView() {
         </div>
       </div>
     </div>
+    </ProtectedPage>
   );
 }
 

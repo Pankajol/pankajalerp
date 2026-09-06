@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
+import ProtectedPage from '@/components/ProtectedPage';
 import axios from 'axios';
 import { 
   FaArrowLeft, FaUser, FaCalendarAlt, FaBoxOpen, 
@@ -173,6 +174,7 @@ export default function DeliveryView() {
   }[delivery.status] || "bg-indigo-50 text-indigo-600 border-indigo-100";
 
   return (
+    <ProtectedPage module="Delivery" action="view">
     <div className="min-h-screen bg-gray-50 py-8 px-4 sm:px-6">
       <div className="max-w-7xl mx-auto">
         
@@ -428,5 +430,6 @@ export default function DeliveryView() {
         </div>
       </div>
     </div>
+    </ProtectedPage>
   );
 }

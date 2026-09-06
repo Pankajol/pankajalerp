@@ -1,11 +1,17 @@
 // app/admin/crm/LeadDetailsFormMaster/[id]/page.js
 import { Suspense } from "react";
 import LeadDetailsForm from "@/components/LeadDetailsForm"; // Adjust the import path as needed
+import { useAuth } from "@/context/AuthContext";
+import ProtectedPage from "@/components/ProtectedPage";
 
 async function EditLeadContent({ params }) {
   // ✅ CORRECT: Await the params promise
   const { id } = await params;
-  return <LeadDetailsForm leadId={id} />;
+  return (
+    <ProtectedPage permission="Lead Generation" action="update">
+      <LeadDetailsForm leadId={id} />
+    </ProtectedPage>
+  );
 }
 
 export default function EditLeadPage({ params }) {

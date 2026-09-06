@@ -3,6 +3,8 @@
 import React, { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import axios from "axios";
+import { useAuth } from "@/context/AuthContext";
+import ProtectedPage from "@/components/ProtectedPage";
 import { FaTasks, FaCalendarAlt, FaInfoCircle } from "react-icons/fa";
 import LeadTasks from "@/components/crm/LeadTasks";
 import ActivityTimeline from "@/components/crm/ActivityTimeline";
@@ -48,11 +50,12 @@ const ViewLeadPage = () => {
   const leadFullName = `${lead.firstName || ""} ${lead.lastName || ""}`.trim();
 
   return (
-    <div className="max-w-5xl mx-auto p-6 bg-gray-50 min-h-screen">
-      {/* Header with lead name */}
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-          Lead Details: {leadFullName}
+    <ProtectedPage permission="Lead Generation" action="read">
+      <div className="max-w-5xl mx-auto p-6 bg-gray-50 min-h-screen">
+        {/* Header with lead name */}
+        <div className="mb-6">
+          <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
+            Lead Details: {leadFullName}
         </h1>
         <p className="text-sm text-gray-500">ID: {id}</p>
       </div>
@@ -175,6 +178,7 @@ const ViewLeadPage = () => {
         </button>
       </div>
     </div>
+    </ProtectedPage>
   );
 };
 

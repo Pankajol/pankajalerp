@@ -3,6 +3,7 @@
 import React, { useEffect, useState, useRef } from "react";
 import api from "@/lib/api";
 import Select from "react-select";
+import { useRouter } from "next/navigation";
 import { 
   FaPlus, FaTasks, FaUserCircle, FaCalendarAlt, FaEllipsisV, 
   FaEdit, FaTrash, FaLevelDownAlt, FaClock, FaCheckCircle 
@@ -41,6 +42,7 @@ export default function TasksPage() {
   const [subPriority, setSubPriority] = useState("medium");
   const [subStatus, setSubStatus] = useState("todo");
   const [subProgress, setSubProgress] = useState(0);
+  const router = useRouter();
 
   const fetchData = async () => {
     setLoading(true);
@@ -52,7 +54,7 @@ export default function TasksPage() {
         api.get("/company/users", { headers }),
       ]);
       setTasks(tRes.data);
-      setUsers(uRes.data.filter((u) => u.roles?.includes("Employee")));
+      setUsers(uRes.data.filter((u) => u.roles?.includes("Employee") || u.roles?.includes("Task")));
     } catch (err) {
       console.error("Error fetching data:", err);
     } finally {
@@ -74,6 +76,10 @@ export default function TasksPage() {
     };
     return <span className={`text-[10px] font-bold px-2 py-0.5 rounded border uppercase ${map[level]}`}>{level}</span>;
   };
+
+  const handleTaskClick = (taskId) => {
+  router.push(`/admin/tasks/${taskId}`);
+};
 
   const StatusBadge = ({ state }) => {
     const map = {
@@ -176,7 +182,10 @@ export default function TasksPage() {
               <tbody className="divide-y divide-gray-50">
                 {tasks.map((t) => (
                   <React.Fragment key={t._id}>
-                    <tr onClick={() => toggleExpand(t._id)} className="hover:bg-indigo-50/30 transition-colors cursor-pointer group">
+                   <tr
+  onClick={() => handleTaskClick(t._id)}
+  className="hover:bg-indigo-50/30 transition-colors cursor-pointer group"
+>
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-3">
                           <div className={`w-1 h-8 rounded-full ${expandedTaskId === t._id ? 'bg-indigo-500' : 'bg-transparent group-hover:bg-gray-200'}`} />

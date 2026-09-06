@@ -3,6 +3,8 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import axios from 'axios';
+import ProtectedPage from "@/components/ProtectedPage";
+import { useAuth } from "@/context/AuthContext";
 import { 
   FaArrowLeft, FaUser, FaCalendarAlt, FaBoxOpen, 
   FaCalculator, FaPaperclip, FaInfoCircle, FaFilePdf, 
@@ -91,10 +93,17 @@ const ItemImage = ({ src, alt, className = "w-10 h-10" }) => {
 export default function SalesQuotationView() {
   const { id } = useParams();
   const router = useRouter();
+  const { can, loading: authLoading } = useAuth();
   const [quotation, setQuotation] = useState(null);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
+   useEffect(() => {
+  if (authLoading) return;
 
+  if (!can("Sales Quotation", "view")) {
+    router.replace("/403"); // or router.back()
+  }
+}, [authLoading, can, router]);
   useEffect(() => {
     if (!id) return;
 
@@ -142,6 +151,7 @@ export default function SalesQuotationView() {
   };
 
   if (loading) return (
+    
     <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50">
       <FaSpinner className="animate-spin text-4xl text-indigo-600 mb-4" />
       <p className="text-gray-400 font-bold uppercase text-xs tracking-widest">Loading Quotation...</p>
@@ -172,6 +182,10 @@ export default function SalesQuotationView() {
   }[quotation.status] || "bg-amber-50 text-amber-600 border-amber-100";
 
   return (
+        <ProtectedPage
+      module="Sales Quotation"
+      action="view"
+    >
     <div className="min-h-screen bg-gray-50 py-8 px-4 sm:px-6">
       <div className="max-w-7xl mx-auto">
         
@@ -412,6 +426,7 @@ export default function SalesQuotationView() {
         </div>
       </div>
     </div>
+    </ProtectedPage>
   );
 }
 // "use client";

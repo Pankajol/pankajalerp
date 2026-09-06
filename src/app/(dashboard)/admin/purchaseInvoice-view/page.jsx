@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useCallback, useMemo } from "react";
 import Link from "next/link";
+import ProtectedPage from "@/components/ProtectedPage";
+import { useAuth } from "@/context/AuthContext";
 import axios from "axios";
 import { useRouter } from "next/navigation";
 import { toast } from "react-toastify";
@@ -43,6 +45,7 @@ export default function PurchaseInvoiceList() {
     pendingAmount: 0,
   });
 
+  const { can, loading: authLoading } = useAuth();
   // Fetch global stats (without pagination)
   const fetchStats = useCallback(async () => {
     try {
@@ -173,6 +176,7 @@ export default function PurchaseInvoiceList() {
   };
 
   return (
+    <ProtectedPage module="PurchaseInvoice" action="view">
     <div className="min-h-screen bg-gray-50">
       <div className="max-w-screen-xl mx-auto px-4 sm:px-6 py-6">
         {/* Header */}
@@ -185,11 +189,15 @@ export default function PurchaseInvoiceList() {
               {stats.total} total invoices recorded
             </p>
           </div>
-          <Link href="/admin/purchaseInvoice-view/new">
-            <button className="flex items-center gap-2 px-3.5 py-2 rounded-lg bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 transition-all shadow-sm">
-              <FaPlus className="text-xs" /> New Invoice
-            </button>
-          </Link>
+           {
+            can("PurchaseInvoice", "create") && (
+              <Link href="/admin/purchaseInvoice-view/new">
+                <button className="flex items-center gap-2 px-3.5 py-2 rounded-lg bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 transition-all shadow-sm">
+                  <FaPlus className="text-xs" /> New Invoice
+                </button>
+              </Link>
+            )
+           }
         </div>
 
         {/* Stat Cards */}
@@ -412,43 +420,112 @@ export default function PurchaseInvoiceList() {
         }
       `}</style>
     </div>
+    </ProtectedPage>
   );
 }
 
-// Helper component for row actions
+
+
 function InvoiceRowMenu({ invoice, onDelete, onCopyTo }) {
   const router = useRouter();
+  const { can } = useAuth();
 
-  const handleView = () => router.push(`/admin/purchaseInvoice-view/view/${invoice._id}`);
-  const handleEdit = () => router.push(`/admin/purchaseInvoice-view/new/?editId=${invoice._id}`);
+  const handleView = () =>
+    router.push(`/admin/purchaseInvoice-view/view/${invoice._id}`);
+
+  const handleEdit = () =>
+    router.push(`/admin/purchaseInvoice-view/new?editId=${invoice._id}`);
 
   const handleEmail = async () => {
     try {
       const token = localStorage.getItem("token");
+
       const res = await axios.post(
         "/api/email",
-        { type: "purchase-invoice", id: invoice._id },
-        { headers: { Authorization: `Bearer ${token}` } }
+        {
+          type: "purchase-invoice",
+          id: invoice._id,
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
       );
-      if (res.data.success) toast.success("Email sent!");
-      else toast.error(res.data.message || "Failed to send email");
+
+      if (res.data.success) {
+        toast.success("Email sent!");
+      } else {
+        toast.error(res.data.message || "Failed to send email");
+      }
     } catch (error) {
+      console.error(error);
       toast.error("Error sending email");
     }
   };
 
   const handleWhatsApp = () => {
-    router.push(`/admin/purchaseInvoice-view/${invoice._id}/send-whatsapp`);
+    router.push(
+      `/admin/purchaseInvoice-view/${invoice._id}/send-whatsapp`
+    );
   };
 
-  const actions = [
-    { icon: <FaEye />, label: "View Invoice", onClick: handleView },
-    { icon: <FaEdit />, label: "Edit Invoice", onClick: handleEdit },
-    { icon: <FaCopy />, label: "Copy → Debit Note", onClick: () => onCopyTo(invoice, "debitNote") },
-    { icon: <FaEnvelope />, label: "Email PDF", onClick: handleEmail },
-    { icon: <FaWhatsapp />, label: "WhatsApp", onClick: handleWhatsApp },
-    { icon: <FaTrash />, label: "Delete", color: "text-red-600", onClick: () => onDelete(invoice._id) },
-  ];
+  const actions = [];
+
+  // View
+  if (can("Purchase Invoice", "view")) {
+    actions.push({
+      icon: <FaEye />,
+      label: "View Invoice",
+      onClick: handleView,
+    });
+  }
+
+  // Edit
+  if (can("Purchase Invoice", "edit")) {
+    actions.push({
+      icon: <FaEdit />,
+      label: "Edit Invoice",
+      onClick: handleEdit,
+    });
+  }
+
+  // Copy → Debit Note
+  if (can("Purchase Invoice", "copy")) {
+    actions.push({
+      icon: <FaCopy />,
+      label: "Copy → Debit Note",
+      onClick: () => onCopyTo(invoice, "debitNote"),
+    });
+  }
+
+  // Email
+  if (can("Purchase Invoice", "email")) {
+    actions.push({
+      icon: <FaEnvelope />,
+      label: "Email PDF",
+      onClick: handleEmail,
+    });
+  }
+
+  // WhatsApp
+  if (can("Purchase Invoice", "whatsapp")) {
+    actions.push({
+      icon: <FaWhatsapp />,
+      label: "WhatsApp",
+      onClick: handleWhatsApp,
+    });
+  }
+
+  // Delete
+  if (can("Purchase Invoice", "delete")) {
+    actions.push({
+      icon: <FaTrash />,
+      label: "Delete",
+      color: "text-red-600",
+      onClick: () => onDelete(invoice._id),
+    });
+  }
 
   return <ActionMenu actions={actions} />;
 }

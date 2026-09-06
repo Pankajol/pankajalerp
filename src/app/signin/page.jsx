@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import axios from 'axios';
+import { useAuth } from "@/context/AuthContext";
 import {
   FiEye, FiEyeOff, FiMail, FiLock, FiChevronRight,
   FiLoader, FiUser, FiBriefcase, FiShield, FiHeart
@@ -31,6 +32,7 @@ export default function LoginPage() {
   const [imageLoaded, setImageLoaded] = useState(false);
   const [emailError, setEmailError] = useState('');
   const [shake, setShake] = useState('');
+  const { login } = useAuth();
 
   const handle = (e) => {
     setForm({ ...form, [e.target.name]: e.target.value });
@@ -74,9 +76,13 @@ export default function LoginPage() {
 
     if (!token || !finalUser) throw new Error("Authentication failed");
 
-    localStorage.setItem("token", token);
-    localStorage.setItem("user", JSON.stringify(finalUser));
-    axios.defaults.headers.common["Authorization"] = `Bearer ${token}`;
+    // localStorage.setItem("token", token);
+    // localStorage.setItem("user", JSON.stringify(finalUser));
+    // axios.defaults.headers.common["Authorization"] = `Bearer ${token}`;
+
+    login(token); // Updates AuthContext immediately
+localStorage.setItem("user", JSON.stringify(finalUser));
+axios.defaults.headers.common["Authorization"] = `Bearer ${token}`;
 
     toast.success(`Welcome back, ${finalUser.name || finalUser.companyName || "User"}!`);
 
@@ -112,7 +118,7 @@ export default function LoginPage() {
       const managementType = finalUser?.managementType?.toLowerCase() || "erp";
       if (managementType === "society") redirect = "/societymanagement";
       else if (managementType === "healthcare") redirect = "/healthcare-dashboard";
-      else if (managementType === "education") redirect = "/education-dashboard";
+      else if (managementType === "education") redirect = "/school";
       else if (managementType === "retail") redirect = "/retail-dashboard";
       else if (managementType === "election") redirect = "/election";
       else redirect = "/admin";

@@ -21,7 +21,7 @@ function isAuthorized(user) {
   if (!user) return false;
   if (user.type === "company") return true;
   const allowedRoles = [
-    "admin", "crm", "sales manager", "purchase manager",
+    "admin", "crm","Sales","Purchase","sales manager", "purchase manager",
     "inventory manager", "accounts manager", "hr manager",
     "support executive", "production head", "project manager"
   ];

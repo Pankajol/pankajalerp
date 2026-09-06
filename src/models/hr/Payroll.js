@@ -14,6 +14,10 @@ const PayrollSchema = new mongoose.Schema({
   deductions:  { type: Number, default: 0 },
   netSalary:   { type: Number, default: 0 },
 
+  // Snapshot when payroll is created. Paid payrolls must not be recalculated.
+  approvedTimesheetHours: { type: Number, default: 0 },
+  timesheetCalculatedAt: { type: Date },
+
   paidStatus:  { type: String, enum: ["Unpaid", "Processing", "Paid"], default: "Unpaid" },
   paidAt:      { type: Date },
 

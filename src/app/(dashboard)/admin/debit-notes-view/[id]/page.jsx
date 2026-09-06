@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import axios from "axios";
+import ProtectedPage from "@/components/ProtectedPage";
 import Link from "next/link";
 import { 
   FaArrowLeft, FaEdit, FaUser, FaCalendarAlt, FaBoxOpen, 
@@ -90,12 +91,13 @@ export default function DebitNoteDetail() {
   );
 
   return (
-    <div className="min-h-screen bg-gray-50 py-8 px-4 sm:px-6">
-      <div className="max-w-5xl mx-auto">
-        
-        {/* --- Header Navigation --- */}
-        <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
-          <button onClick={() => router.push("/admin/debit-notes-view")} 
+    <ProtectedPage module="DebitNote" action="view">
+      <div className="min-h-screen bg-gray-50 py-8 px-4 sm:px-6">
+        <div className="max-w-5xl mx-auto">
+          
+          {/* --- Header Navigation --- */}
+          <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
+            <button onClick={() => router.push("/admin/debit-notes-view")} 
             className="flex items-center gap-2 text-indigo-600 font-bold text-sm hover:text-indigo-800 transition-colors">
             <FaArrowLeft /> Back to Debit Notes
           </button>
@@ -235,6 +237,7 @@ export default function DebitNoteDetail() {
         </div>
       </div>
     </div>
+    </ProtectedPage>
   );
 }
 

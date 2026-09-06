@@ -43,7 +43,7 @@ export default function HolidaysPage() {
   const [user, setUser] = useState(null);
   const can = (action) => {
     if (!user) return false;
-    if (user.role === "Admin" || user.type === "company") return true;
+    if (user.type === "company" || String(user.role?.name || user.role).toLowerCase() === "admin" || user.roles?.some((r) => String(r?.name || r).toLowerCase() === "admin")) return true;
     return user.permissions?.holidays?.includes(action);
   };
   useEffect(() => {
@@ -57,6 +57,8 @@ export default function HolidaysPage() {
   const [form, setForm] = useState({});
   const [saving, setSaving] = useState(false);
   const [year, setYear] = useState(new Date().getFullYear().toString());
+  const [search, setSearch] = useState("");
+  const [month, setMonth] = useState("all");
   const [addingHolidays, setAddingHolidays] = useState(false);
   const [autoLoadAsked, setAutoLoadAsked] = useState(false); // avoid repeated prompts
 
@@ -151,29 +153,32 @@ export default function HolidaysPage() {
               <option key={y}>{y}</option>
             ))}
           </select>
-          {can("create") && (
-            <>
+          <>
+              <button
+                style={{ ...S.btn, background: "#ef4444", boxShadow: "0 6px 14px rgba(239,68,68,.18)" }}
+                onClick={() => {
+                  setForm({ title: "", date: `${year}-01-01`, description: "" });
+                  setShow(true);
+                }}
+              >
+                + Add Holiday Manually
+              </button>
               <button
                 style={{ ...S.btn, background: "#10b981" }}
                 onClick={addIndianHolidays}
                 disabled={addingHolidays}
               >
-                {addingHolidays ? "Adding..." : "🇮🇳 Load Indian Holidays"}
+                {addingHolidays ? "Adding..." : "Load Predefined Indian Holidays"}
               </button>
-              <button
-                style={{ ...S.btn, background: "#ef4444" }}
-                onClick={() => {
-                  setForm({});
-                  setShow(true);
-                }}
-              >
-                + Add Holiday
-              </button>
-            </>
-          )}
+          </>
         </div>
       </div>
 
+      {!loading && <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", marginBottom: "1.5rem", background: "#fff", border: "1px solid #e2e8f0", borderRadius: "16px", padding: "1rem" }}>
+        <input placeholder="Search holidays..." style={{ ...S.inp, flex: 1, minWidth: 220 }} value={search} onChange={(e) => setSearch(e.target.value)} />
+        <select style={S.inp} value={month} onChange={(e) => setMonth(e.target.value)}><option value="all">All months</option>{Array.from({ length: 12 }, (_, i) => <option key={i} value={String(i + 1).padStart(2, "0")}>{new Date(2000, i, 1).toLocaleString("en", { month: "long" })}</option>)}</select>
+        <span style={{ alignSelf: "center", color: "#64748b", fontSize: "0.8rem", fontWeight: 600 }}>{items.filter((h) => (!search || `${h.title} ${h.description || ""}`.toLowerCase().includes(search.toLowerCase())) && (month === "all" || h.date.slice(5, 7) === month)).length} holidays</span>
+      </div>}
       {loading ? (
         <div style={{ padding: "4rem", textAlign: "center", color: "#64748b" }}>Loading holidays…</div>
       ) : (
@@ -185,6 +190,7 @@ export default function HolidaysPage() {
           }}
         >
           {items
+            .filter((h) => (!search || `${h.title} ${h.description || ""}`.toLowerCase().includes(search.toLowerCase())) && (month === "all" || h.date.slice(5, 7) === month))
             .sort((a, b) => a.date.localeCompare(b.date))
             .map((h) => {
               const d = new Date(h.date);

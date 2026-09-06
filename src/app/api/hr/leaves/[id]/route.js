@@ -42,7 +42,7 @@ export async function PATCH(req, context) {
     }
 
     // 🔍 Find leave
-    const leave = await Leave.findById(id);
+    const leave = await Leave.findOne({ _id: id, companyId: user.companyId });
 
     if (!leave) {
       return NextResponse.json(
@@ -70,34 +70,21 @@ export async function PATCH(req, context) {
     // 🎯 1. LEAVE BALANCE (FIXED)
     // =========================
     if (status === "Approved") {
-      const balance = await LeaveBalance.findOne({
-        employeeId: leave.employeeId,
-      });
-
-      if (balance) {
-        const days =
-          Math.ceil(
-            (new Date(leave.toDate) - new Date(leave.fromDate)) /
-              (1000 * 60 * 60 * 24)
-          ) + 1;
-
-        if (leave.leaveType === "Casual") {
-          balance.casual -= days;
+      const days = Math.floor((new Date(leave.toDate) - new Date(leave.fromDate)) / (1000 * 60 * 60 * 24)) + 1;
+      const fieldByType = { Casual: "casual", Sick: "sick", Paid: "paid" };
+      const field = fieldByType[leave.leaveType];
+      if (field) {
+        const balance = await LeaveBalance.findOneAndUpdate(
+          { employeeId: leave.employeeId, companyId: user.companyId, [field]: { $gte: days } },
+          { $inc: { [field]: -days } },
+          { new: true }
+        );
+        if (!balance) {
+          leave.status = "Pending";
+          leave.approvedBy = undefined;
+          await leave.save();
+          return NextResponse.json({ success: false, message: "Insufficient leave balance" }, { status: 400 });
         }
-
-        if (leave.leaveType === "Sick") {
-          balance.sick -= days;
-        }
-
-        if (leave.leaveType === "Paid") {
-          balance.paid -= days;
-        }
-
-        if (leave.leaveType === "Unpaid") {
-          balance.unpaid += days;
-        }
-
-        await balance.save();
       }
     }
 

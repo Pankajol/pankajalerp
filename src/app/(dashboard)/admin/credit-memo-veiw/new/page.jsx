@@ -3,10 +3,12 @@
 import { useState, useEffect, Suspense, useCallback, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import axios from "axios";
+import ProtectedPage from "@/components/ProtectedPage";
 import ItemSection from "@/components/ItemSection";
 import CustomerSearch from "@/components/CustomerSearch";
 import CustomerAddressSelector from "@/components/CustomerAddressSelector";
 import { toast, ToastContainer } from "react-toastify";
+
 import "react-toastify/dist/ReactToastify.css";
 import { jwtDecode } from "jwt-decode";
 import {
@@ -148,9 +150,11 @@ const initialCreditMemoState = {
 // --------------------------------------------------------------
 export default function CreditMemoPage() {
   return (
-    <Suspense fallback={<div className="flex items-center justify-center min-h-screen text-gray-400">Loading Credit Memo Form...</div>}>
-      <CreditMemoForm />
-    </Suspense>
+    <ProtectedPage module="CreditMemo" action="create">
+      <Suspense fallback={<div className="flex items-center justify-center min-h-screen text-gray-400">Loading Credit Memo Form...</div>}>
+        <CreditMemoForm />
+      </Suspense>
+    </ProtectedPage>
   );
 }
 

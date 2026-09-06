@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import connectDB from "@/lib/db";
 import JobCard from "@/models/ppc/JobCardModel";
+import ProductionEvent from "@/models/ppc/ProductionEvent";
 import { getTokenFromHeader, verifyJWT } from "@/lib/auth";
 
 // ✅ PUT: Update job card with totalDuration and cascading logic
@@ -11,7 +12,8 @@ export async function PUT(req, { params }) {
 
     // --- Auth check ---
     const token = getTokenFromHeader(req);
-    if (!token || !verifyJWT(token)) {
+    const user = verifyJWT(token);
+    if (!token || !user) {
       return NextResponse.json({ success: false, message: "Unauthorized" }, { status: 401 });
     }
 
@@ -20,7 +22,7 @@ export async function PUT(req, { params }) {
     let { completedQty, status, actualStartDate, actualEndDate, totalDuration } = body;
 
     // --- Find current job card ---
-    const currentJobCard = await JobCard.findById(id);
+    const currentJobCard = await JobCard.findOne({ _id: id, companyId: user.companyId });
     if (!currentJobCard) {
       return NextResponse.json({ success: false, message: "Job card not found" }, { status: 404 });
     }
@@ -36,23 +38,25 @@ export async function PUT(req, { params }) {
 
     // --- Update fields ---
     currentJobCard.completedQty = completedQty;
-    if (status) currentJobCard.status = status;
+    const previousStatus = currentJobCard.status;
+    if (status && ["Planned", "Released", "In Progress", "On Hold", "Completed", "Cancelled"].includes(status)) currentJobCard.status = status;
     if (actualStartDate) currentJobCard.actualStartDate = actualStartDate;
     if (actualEndDate) currentJobCard.actualEndDate = actualEndDate;
     if (totalDuration !== undefined) currentJobCard.totalDuration = Number(totalDuration);
 
     // --- Determine status ---
     if (completedQty >= currentJobCard.qtyToManufacture) {
-      currentJobCard.status = "completed";
+      currentJobCard.status = "Completed";
       if (!currentJobCard.actualEndDate) currentJobCard.actualEndDate = new Date();
     } else if (completedQty > 0) {
-      currentJobCard.status = "partially completed";
+      currentJobCard.status = "In Progress";
       if (!currentJobCard.actualStartDate) currentJobCard.actualStartDate = new Date();
     } else {
-      currentJobCard.status = "planned";
+      currentJobCard.status = "Planned";
     }
 
     const updatedJobCard = await currentJobCard.save();
+    if (previousStatus !== updatedJobCard.status) await ProductionEvent.create({ companyId: user.companyId, entityType: "JobCard", entityId: updatedJobCard._id, action: "STATUS_CHANGED", fromStatus: previousStatus, toStatus: updatedJobCard.status, performedBy: user.id || user._id });
 
     // --- CASCADING: Trigger next job card automatically ---
     const nextJobCard = await JobCard.findOne({
@@ -90,11 +94,12 @@ export async function GET(req, { params }) {
     const { id } = params;
 
     const token = getTokenFromHeader(req);
-    if (!token || !verifyJWT(token)) {
+    const user = verifyJWT(token);
+    if (!token || !user) {
       return NextResponse.json({ success: false, message: "Unauthorized" }, { status: 401 });
     }
 
-    const jobCards = await JobCard.find({ productionOrder: id })
+    const jobCards = await JobCard.find({ productionOrder: id, companyId: user.companyId })
       .populate("operation", "name")
       .populate("machine", "name")
       .populate("operator", "name")
@@ -114,13 +119,14 @@ export async function DELETE(req, { params }) {
     const { id } = params;
 
     const token = getTokenFromHeader(req);
-    if (!token || !verifyJWT(token)) {
+    const user = verifyJWT(token);
+    if (!token || !user) {
       return NextResponse.json({ success: false, message: "Unauthorized" }, { status: 401 });
     }
 
-    const deleted = await JobCard.findByIdAndDelete(id);
+    const deleted = await JobCard.findOneAndDelete({ _id: id, companyId: user.companyId, status: "Planned" });
     if (!deleted) {
-      return NextResponse.json({ success: false, message: "Job card not found" }, { status: 404 });
+      return NextResponse.json({ success: false, message: "Only planned job cards can be deleted" }, { status: 409 });
     }
 
     return NextResponse.json({ success: true, message: "Deleted successfully" });

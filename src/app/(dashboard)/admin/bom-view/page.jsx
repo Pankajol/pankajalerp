@@ -3,6 +3,8 @@
 import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import axios from "axios";
+import { useAuth } from "@/context/AuthContext";
+import ProtectedPage from "@/components/ProtectedPage";
 import { 
   FaSearch, FaWarehouse, FaPlus, FaEye, 
   FaClipboardList, FaLayerGroup, FaCogs, FaBox 
@@ -17,6 +19,7 @@ export default function BOMListPage() {
   const [filterBomType, setFilterBomType] = useState("All");
   const [filterWarehouse, setFilterWarehouse] = useState("All");
   const router = useRouter();
+  const { can } = useAuth();
 
   useEffect(() => {
     async function fetchBOMs() {
@@ -88,6 +91,7 @@ export default function BOMListPage() {
   if (error) return <div className="p-10 text-red-500 text-center font-bold">{error}</div>;
 
   return (
+    <ProtectedPage module="BoM" action="view">
     <div className="min-h-screen bg-gray-50 py-8 px-4 sm:px-10">
       <div className="max-w-7xl mx-auto">
         
@@ -99,11 +103,13 @@ export default function BOMListPage() {
             </h1>
             <p className="text-sm text-gray-400 mt-0.5">Manage multi-level production structures and costs</p>
           </div>
-          <Link href="/admin/bom-new">
-            <button className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-indigo-600 text-white font-bold text-sm hover:bg-indigo-700 shadow-lg shadow-indigo-100 transition-all">
-              <FaPlus size={12} /> Create New BOM
-            </button>
-          </Link>
+          {can("BoM", "create") && (
+            <Link href="/admin/bom">
+              <button className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-indigo-600 text-white font-bold text-sm hover:bg-indigo-700 shadow-lg shadow-indigo-100 transition-all">
+                <FaPlus size={12} /> Create New BOM
+              </button>
+            </Link>
+          )}
         </div>
 
         {/* ── Stat Cards ── */}
@@ -238,6 +244,7 @@ export default function BOMListPage() {
         </div>
       </div>
     </div>
+    </ProtectedPage>
   );
 }
 

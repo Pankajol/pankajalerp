@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
+import ProtectedPage from '@/components/ProtectedPage';
 import axios from 'axios';
 import { 
   FaArrowLeft, FaUser, FaCalendarAlt, FaBoxOpen, 
@@ -142,6 +143,7 @@ export default function PurchaseInvoiceView() {
   );
 
   if (error || !invoice) return (
+    
     <div className="min-h-screen bg-gray-50 flex items-center justify-center p-6">
       <div className="max-w-md w-full bg-white p-8 rounded-3xl shadow-xl border border-red-50 text-center">
         <FaInfoCircle className="text-red-500 text-5xl mx-auto mb-4" />
@@ -157,6 +159,7 @@ export default function PurchaseInvoiceView() {
   const docNumber = invoice.documentNumberPurchaseInvoice || invoice.documentNumberInvoice || invoice.refNumber || "PI-INTERNAL";
 
   return (
+    <ProtectedPage module="PurchaseInvoice" action="view">
     <div className="min-h-screen bg-gray-50 py-8 px-4 sm:px-6">
       <div className="max-w-7xl mx-auto">
         
@@ -413,5 +416,6 @@ export default function PurchaseInvoiceView() {
         </div>
       </div>
     </div>
+    </ProtectedPage>
   );
 }

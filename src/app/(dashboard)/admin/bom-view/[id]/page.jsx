@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import axios from "axios";
+import ProtectedPage from "@/components/ProtectedPage";
 import { 
   FaArrowLeft, FaBox, FaCogs, FaWarehouse, 
   FaCalendarAlt, FaCalculator, FaListOl, FaTools 
@@ -81,6 +82,7 @@ export default function BOMViewPage() {
   const warehouseName = bom?.warehouse?.warehouseName || bom?.warehouse || "—";
 
   return (
+    <ProtectedPage module="BoM" action="view">
     <div className="min-h-screen bg-gray-50 py-8 px-4 sm:px-10">
       <div className="max-w-5xl mx-auto">
         
@@ -206,6 +208,7 @@ export default function BOMViewPage() {
         </div>
       </div>
     </div>
+    </ProtectedPage>
   );
 }
 

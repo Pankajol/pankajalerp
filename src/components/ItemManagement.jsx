@@ -1,9 +1,10 @@
-
-
 "use client";
 
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import axios from "axios";
+import Papa from "papaparse";
+import { useAuth } from "@/context/AuthContext";
+import ProtectedPage from "@/components/ProtectedPage";
 import {
   FaEdit, FaTrash, FaPlus, FaSearch, FaArrowLeft,
   FaChevronLeft, FaChevronRight, FaCheck, FaFileUpload,
@@ -16,6 +17,7 @@ import {
 import { HiOutlineDocumentText } from "react-icons/hi";
 import ItemGroupSearch from "./ItemGroupSearch";
 import { toast } from "react-toastify";
+import { useSearchParams } from "next/navigation";
 
 // ── 7 Steps (added Variants) ──
 const STEPS = [
@@ -47,6 +49,9 @@ const INITIAL = {
     maxDiscountPercent: 100, taxableInPOS: true, showInPOS: true,
   },
   variants: [], // new
+  isTextile: false, textileItemType: "", isStockItem: true, stockUom: "",
+  brand: "", hsnCode: "", defaultWarehouse: "", batchRequired: false,
+  hasVariants: false, rollTrackingEnabled: false, textileDetails: { composition: [] },
 };
 
 const VALIDATORS = {
@@ -58,6 +63,7 @@ const VALIDATORS = {
     if (d.quantity === "" || d.quantity === undefined) e.quantity = "Minimum Stock is required";
     if (!d.uom)     e.uom     = "Unit of Measure is required";
     if (!d.itemType) e.itemType = "Item Type is required";
+    if (d.isTextile && !d.textileItemType) e.textileItemType = "Textile Item Type is required";
     return e;
   },
   2: () => ({}), 3: () => ({}), 4: () => ({}), 5: () => ({}), 6: () => ({}), 7: () => ({}),
@@ -287,6 +293,21 @@ function ViewItemModal({ item, onClose }) {
             <div>
               <h4 className="text-xs font-bold uppercase text-gray-400 mb-1">Description</h4>
               <p className="text-sm text-gray-700">{item.description}</p>
+            </div>
+          )}
+
+          {item.isTextile && (
+            <div>
+              <h4 className="text-xs font-bold uppercase text-gray-400 mb-2">Textile Details</h4>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                <InfoCard label="Textile Type" value={item.textileItemType} />
+                <InfoCard label="Stock UOM" value={item.stockUom || item.uom} />
+                <InfoCard label="Brand" value={item.brand} />
+                <InfoCard label="HSN Code" value={item.hsnCode} />
+                <InfoCard label="Default Warehouse" value={item.defaultWarehouse} />
+                <InfoCard label="Batch / Lot" value={item.batchRequired ? "Required" : "Not required"} />
+                {Object.entries(item.textileDetails || {}).filter(([, value]) => !Array.isArray(value) && value !== "" && value != null).map(([key, value]) => <InfoCard key={key} label={key.replace(/([A-Z])/g, " $1")} value={value} />)}
+              </div>
             </div>
           )}
 
@@ -676,12 +697,14 @@ function QRScannerModal({ onScanSuccess, onManual, onClose }) {
 // MAIN COMPONENT
 // ════════════════════════════════════════
 export default function ItemManagement() {
+  const searchParams = useSearchParams();
   const [view, setView] = useState("list");
   const [items, setItems] = useState([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [filterType, setFilterType] = useState("All");
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [bulkReport, setBulkReport] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [step, setStep] = useState(1);
   const [id, setId] = useState({ ...INITIAL });
@@ -693,6 +716,21 @@ export default function ItemManagement() {
    // View modal state
   const [viewItem, setViewItem] = useState(null);
   const [viewModalOpen, setViewModalOpen] = useState(false);
+
+  const { can } = useAuth();
+
+  // Permissions come directly from AuthContext / JWT (module: "Items")
+  const permissions = {
+    view: can("Items", "view"),
+    create: can("Items", "create"),
+    edit: can("Items", "edit"),
+    delete: can("Items", "delete"),
+    import: can("Items", "import"),
+    export: can("Items", "export"),
+    upload: can("Items", "upload"),
+    download: can("Items", "download"),
+  };
+
   const fetchAllItemsForStats = async () => {
     try {
       const token = localStorage.getItem("token");
@@ -761,6 +799,7 @@ export default function ItemManagement() {
     // ✅ View function
  // Replace handleView with this:
 const handleView = async (itemId) => {
+  if (!permissions.view) return toast.error("No view permission");
   try {
     const token = localStorage.getItem("token");
     const res = await axios.get(`/api/items?id=${itemId}`, {
@@ -794,8 +833,9 @@ const handleView = async (itemId) => {
   }, []);
 
   const handleCreateClick = async () => {
+    if (!permissions.create) return toast.error("No create permission");
     await generateCode();
-    setId(p => ({ ...INITIAL, itemCode: p.itemCode }));
+    setId(p => ({ ...INITIAL, itemCode: p.itemCode, isTextile: searchParams.get("type") === "textile" }));
     setStep(1);
     setErrs({});
     setShowScanner(true);
@@ -815,10 +855,20 @@ const handleView = async (itemId) => {
       setId(p => ({ ...p, posConfig: { ...(p.posConfig || {}), [key]: type === "checkbox" ? checked : value } }));
       return;
     }
+    if (name.startsWith("textileDetails.")) {
+      const key = name.split(".")[1];
+      setId(p => ({ ...p, textileDetails: { ...(p.textileDetails || {}), [key]: value } }));
+      return;
+    }
     if (type === "checkbox") { setId(p => ({ ...p, [name]: checked })); return; }
     if (name === "gstRate") {
       const rate = parseFloat(value) || 0;
       setId(p => ({ ...p, gstRate: value, cgstRate: rate / 2, sgstRate: rate / 2 }));
+      return;
+    }
+    if (name === "textileItemType") {
+      setId(p => ({ ...p, textileItemType: value, rollTrackingEnabled: value === "Finished Fabric" ? true : p.rollTrackingEnabled }));
+      clearErr(name);
       return;
     }
     setId(p => ({ ...p, [name]: value }));
@@ -869,6 +919,9 @@ const handleView = async (itemId) => {
   };
   const addQC = () => setId(p => ({ ...p, qualityCheckDetails: [...p.qualityCheckDetails, { srNo: "", parameter: "", min: "", max: "" }] }));
   const removeQC = (i) => setId(p => ({ ...p, qualityCheckDetails: p.qualityCheckDetails.filter((_, j) => j !== i) }));
+  const addComposition = () => setId(p => ({ ...p, textileDetails: { ...(p.textileDetails || {}), composition: [...(p.textileDetails?.composition || []), { fiber: "", percentage: "", recycled: false, certification: "" }] } }));
+  const updateComposition = (index, field, value) => setId(p => ({ ...p, textileDetails: { ...(p.textileDetails || {}), composition: (p.textileDetails?.composition || []).map((row, rowIndex) => rowIndex === index ? { ...row, [field]: value } : row) } }));
+  const removeComposition = (index) => setId(p => ({ ...p, textileDetails: { ...(p.textileDetails || {}), composition: (p.textileDetails?.composition || []).filter((_, rowIndex) => rowIndex !== index) } }));
 
   const goNext = () => {
     const v = VALIDATORS[step];
@@ -879,6 +932,9 @@ const handleView = async (itemId) => {
   const goPrev = () => { setErrs({}); setStep(s => s - 1); };
 
   const handleSubmit = async () => {
+    if (id._id && !permissions.edit) return toast.error("No edit permission");
+    if (!id._id && !permissions.create) return toast.error("No create permission");
+
     const allE = VALIDATORS[1](id);
     if (Object.keys(allE).length) { setErrs(allE); toast.error("Fix required fields"); return; }
     setSubmitting(true);
@@ -932,6 +988,7 @@ const handleView = async (itemId) => {
 
   const reset = () => { setId({ ...INITIAL }); setStep(1); setErrs({}); setView("list"); setCurrentPage(1); };
   const handleEdit = async (item) => {
+    if (!permissions.edit) return toast.error("No edit permission");
     try {
       const token = localStorage.getItem("token");
       const res = await axios.get(`/api/items?id=${item._id}`, { headers: { Authorization: `Bearer ${token}` } });
@@ -944,6 +1001,7 @@ const handleView = async (itemId) => {
     } catch { toast.error("Error loading item"); }
   };
   const handleDelete = async (itemId) => {
+    if (!permissions.delete) return toast.error("No delete permission");
     if (!confirm("Delete this item?")) return;
     try {
       const token = localStorage.getItem("token");
@@ -955,33 +1013,102 @@ const handleView = async (itemId) => {
 
   const downloadTemplate = async () => {
     try {
-      const res = await fetch("/api/items/template");
-      if (!res.ok) throw new Error();
+      const token = localStorage.getItem("token");
+      const res = await fetch("/api/items/template", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        const error = await res.json().catch(() => ({}));
+        throw new Error(error.message || "Template download failed");
+      }
       const blob = await res.blob();
-      const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "item_template.csv"; a.click();
-    } catch { toast.error("Error downloading template"); }
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "item_bulk_upload_template.csv";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (error) {
+      toast.error(error.message || "Error downloading template");
+    }
   };
 
   const handleBulk = async (e) => {
-    const file = e.target.files[0]; if (!file) return;
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.name.toLowerCase().endsWith(".csv")) {
+      toast.error("Please upload the downloaded CSV template");
+      e.target.value = "";
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error("CSV file must be smaller than 10 MB");
+      e.target.value = "";
+      return;
+    }
     setUploading(true);
+    setBulkReport(null);
     try {
       const token = localStorage.getItem("token");
       const text = await file.text();
-      const lines = text.split("\n").filter(l => l.trim());
-      const hdrs = lines[0].split(",").map(h => h.trim());
-      const jsonData = lines.slice(1).map(line => { const v = line.split(","); const o = {}; hdrs.forEach((k, i) => (o[k] = v[i]?.trim() || "")); return o; });
+      const parsed = Papa.parse(text, {
+        header: true,
+        skipEmptyLines: "greedy",
+        transformHeader: (header) => header.replace(/^\uFEFF/, "").trim(),
+      });
+      if (parsed.errors.length) {
+        const parseResults = parsed.errors.slice(0, 10).map((error) => ({
+          row: Number(error.row || 0) + 2,
+          success: false,
+          errors: [error.message],
+        }));
+        setBulkReport({
+          success: false,
+          message: "CSV could not be parsed",
+          summary: { total: 0, created: 0, updated: 0, failed: parseResults.length, groupsCreated: 0 },
+          results: parseResults,
+        });
+        toast.error("CSV has formatting errors. See the import report.");
+        return;
+      }
+      const headers = parsed.meta.fields || [];
+      const duplicateHeaders = headers.filter(
+        (header, index) => headers.indexOf(header) !== index
+      );
+      if (duplicateHeaders.length) {
+        throw new Error(
+          `Duplicate template columns: ${[...new Set(duplicateHeaders)].join(", ")}`
+        );
+      }
+      const missingHeaders = ["itemName", "category", "unitPrice"].filter((header) => !headers.includes(header));
+      if (missingHeaders.length) throw new Error(`Missing template columns: ${missingHeaders.join(", ")}`);
+      const jsonData = parsed.data;
+      if (!jsonData.length) throw new Error("The CSV contains no item rows");
       const res = await axios.post("/api/items/bulk", { items: jsonData }, { headers: { Authorization: `Bearer ${token}` } });
+      setBulkReport(res.data);
       const { success, results } = res.data;
       if (success) {
         const cr = results.filter(r => r.success && r.action === "created").length;
         const up = results.filter(r => r.success && r.action === "updated").length;
         const sk = results.filter(r => !r.success).length;
-        toast.success(`${cr} created · ${up} updated · ${sk} skipped`);
-        results.filter(r => r.warnings?.length).forEach(r => toast.warn(`Row ${r.row}: ${r.warnings.join(", ")}`));
+        toast.success(`${cr} created, ${up} updated, ${sk} failed`);
+        if (sk > 0) toast.error(`${sk} row${sk === 1 ? "" : "s"} failed. See the import report below.`);
+        results.filter(r => r.warnings?.length).slice(0, 3).forEach(r => toast.warn(`Row ${r.row}: ${r.warnings.join(", ")}`));
         refreshData();
       } else toast.error(res.data.message || "Bulk upload failed");
-    } catch { toast.error("Invalid CSV or server error"); }
+    } catch (error) {
+      const response = error.response?.data;
+      const message = response?.message || error.message || "Invalid CSV or server error";
+      setBulkReport(response || {
+        success: false,
+        message,
+        summary: { total: 0, created: 0, updated: 0, failed: 0, groupsCreated: 0 },
+        results: [],
+      });
+      toast.error(message);
+    }
     finally { setUploading(false); e.target.value = ""; }
   };
 
@@ -1179,6 +1306,23 @@ const handleView = async (itemId) => {
           <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 flex items-start gap-3"><FaRuler className="text-blue-500 mt-0.5 shrink-0" /><p className="text-xs text-blue-700 font-medium">Physical dimensions and weight are used for logistics and warehouse management. All optional.</p></div>
           <div><p className="text-sm font-bold text-gray-700 mb-3">Dimensions</p><div className="grid grid-cols-2 sm:grid-cols-4 gap-4">{[{n:"length",l:"Length (cm)",ph:"0"},{n:"width",l:"Width (cm)",ph:"0"},{n:"height",l:"Height (cm)",ph:"0"},{n:"weight",l:"Weight (kg)",ph:"0.00",step:"0.01"}].map(f => (<div key={f.n}><Lbl text={f.l} /><input className={fi("")} name={f.n} type="number" min="0" step={f.step||"1"} placeholder={f.ph} value={id[f.n]||""} onChange={handleChange} /></div>))}</div></div>
           <div className="border-t border-gray-100 pt-5"><p className="text-sm font-bold text-gray-700 mb-3">Additional Details</p><div className="grid grid-cols-1 sm:grid-cols-2 gap-4"><div><Lbl text="Manufacturer" /><input className={fi("")} name="manufacturer" value={id.manufacturer||""} onChange={handleChange} placeholder="e.g. Tata Steel" /></div><div><Lbl text="Expiry Date" /><input className={fi("")} name="expiryDate" type="date" value={id.expiryDate||""} onChange={handleChange} /></div><div><Lbl text="Batch Number" /><input className={fi("")} name="batchNumber" value={id.batchNumber||""} onChange={handleChange} placeholder="e.g. BATCH-2024-001" /></div></div><div className="mt-4 flex flex-wrap gap-4"><Toggle name="gnr" checked={id.gnr} label="GNR Applicable" /><Toggle name="delivery" checked={id.delivery} label="Delivery Item" /><Toggle name="productionProcess" checked={id.productionProcess} label="Production Process" /></div></div>
+          <div className="border-t border-gray-100 pt-5 space-y-4">
+            <div className="flex items-center justify-between"><div><p className="text-sm font-bold text-gray-700">Textile Details</p><p className="text-xs text-gray-400">Enable textile-specific inventory and technical fields.</p></div><Toggle name="isTextile" checked={id.isTextile} label="Textile Item" /></div>
+            {id.isTextile && <div className="rounded-xl border border-indigo-100 bg-indigo-50/40 p-4 space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div><Lbl text="Textile Item Type" req /><select className={fi("textileItemType")} name="textileItemType" value={id.textileItemType || ""} onChange={handleChange}><option value="">Select textile type…</option>{["Raw Material", "Yarn", "Grey Fabric", "Dyed Fabric", "Finished Fabric", "Chemical", "Dye", "Packing Material", "Trading Item", "Scrap"].map(type => <option key={type}>{type}</option>)}</select><Err k="textileItemType" /></div>
+                <div><Lbl text="Stock UOM" /><input className={fi("")} name="stockUom" value={id.stockUom || id.uom || ""} onChange={handleChange} placeholder="Meter / Kg / Roll" /></div>
+                <div><Lbl text="Brand" /><input className={fi("")} name="brand" value={id.brand || ""} onChange={handleChange} /></div>
+                <div><Lbl text="HSN Code" /><input className={fi("")} name="hsnCode" value={id.hsnCode || ""} onChange={handleChange} placeholder="Applicable HSN" /></div>
+                <div className="sm:col-span-2"><Lbl text="Default Warehouse" /><input className={fi("")} name="defaultWarehouse" value={id.defaultWarehouse || ""} onChange={handleChange} /></div>
+              </div>
+              <div className="flex flex-wrap gap-5"><Toggle name="isStockItem" checked={id.isStockItem} label="Stock Item" /><Toggle name="batchRequired" checked={id.batchRequired} label="Batch / Lot Required" /><Toggle name="hasVariants" checked={id.hasVariants} label="Has Variants" />{id.textileItemType === "Finished Fabric" && <Toggle name="rollTrackingEnabled" checked={id.rollTrackingEnabled} label="Enable Roll Tracking" />}</div>
+              {id.textileItemType === "Yarn" && <div><p className="mb-3 text-xs font-bold uppercase tracking-wider text-indigo-700">Yarn Specification</p><div className="grid grid-cols-2 sm:grid-cols-4 gap-3">{[{n:"yarnType",l:"Yarn Type"},{n:"countSystem",l:"Count System"},{n:"count",l:"Count",t:"number"},{n:"denier",l:"Denier",t:"number"},{n:"ply",l:"Ply",t:"number"},{n:"twist",l:"Twist"},{n:"coneWeight",l:"Cone Weight",t:"number"},{n:"compositionTemplate",l:"Composition Template"},{n:"color",l:"Color"},{n:"shade",l:"Shade"}].map(field => <div key={field.n}><Lbl text={field.l} /><input className={fi("")} name={`textileDetails.${field.n}`} type={field.t || "text"} value={id.textileDetails?.[field.n] || ""} onChange={handleChange} /></div>)}</div></div>}
+              {id.textileItemType?.includes("Fabric") && <div className="space-y-4"><p className="text-xs font-bold uppercase tracking-wider text-indigo-700">Fabric Specification</p><div className="grid grid-cols-2 sm:grid-cols-4 gap-3">{[{n:"fabricType",l:"Fabric Type"},{n:"construction",l:"Construction"},{n:"gsm",l:"GSM",t:"number"},{n:"finishedWidth",l:"Finished Width",t:"number"},{n:"widthUom",l:"Width UOM"},{n:"greyWidth",l:"Grey Width",t:"number"},{n:"finish",l:"Finish"},{n:"design",l:"Design"},{n:"color",l:"Color"},{n:"shade",l:"Shade"}].map(field => <div key={field.n}><Lbl text={field.l} /><input className={fi("")} name={`textileDetails.${field.n}`} type={field.t || "text"} value={id.textileDetails?.[field.n] || ""} onChange={handleChange} /></div>)}</div><div><div className="mb-2 flex items-center justify-between"><p className="text-xs font-bold text-gray-600">Composition</p><button type="button" onClick={addComposition} className="rounded-lg bg-white px-3 py-1.5 text-xs font-bold text-indigo-600 shadow-sm">+ Add Fiber</button></div><div className="space-y-2">{(id.textileDetails?.composition || []).map((row, index) => <div key={index} className="grid grid-cols-[2fr_1fr_auto_2fr_auto] gap-2 rounded-lg bg-white p-2"><input className={fi("")} placeholder="Fiber" value={row.fiber || ""} onChange={e => updateComposition(index, "fiber", e.target.value)} /><input className={fi("")} type="number" placeholder="%" value={row.percentage || ""} onChange={e => updateComposition(index, "percentage", e.target.value)} /><label className="flex items-center gap-1 text-xs"><input type="checkbox" checked={Boolean(row.recycled)} onChange={e => updateComposition(index, "recycled", e.target.checked)} /> Recycled</label><input className={fi("")} placeholder="Certification" value={row.certification || ""} onChange={e => updateComposition(index, "certification", e.target.value)} /><button type="button" onClick={() => removeComposition(index)} className="text-red-500"><FaTrash /></button></div>)}</div></div></div>}
+              {["Chemical", "Dye"].includes(id.textileItemType) && <div><p className="mb-3 text-xs font-bold uppercase tracking-wider text-indigo-700">Chemical / Dye Details</p><div className="grid grid-cols-1 sm:grid-cols-2 gap-3">{[{n:"chemicalType",l:"Chemical Type"},{n:"concentration",l:"Concentration",t:"number"},{n:"hazardClass",l:"Hazard Class"},{n:"storageInstructions",l:"Storage Instructions"}].map(field => <div key={field.n}><Lbl text={field.l} /><input className={fi("")} name={`textileDetails.${field.n}`} type={field.t || "text"} value={id.textileDetails?.[field.n] || ""} onChange={handleChange} /></div>)}</div></div>}
+              {["Packing", "Packing Material"].includes(id.textileItemType) && <div><p className="mb-3 text-xs font-bold uppercase tracking-wider text-indigo-700">Packing Details</p><div className="grid grid-cols-1 sm:grid-cols-2 gap-3">{[{n:"packingType",l:"Packing Type"},{n:"packingDimensions",l:"Dimensions"},{n:"materialGrade",l:"Material Grade"},{n:"packingCapacity",l:"Capacity",t:"number"}].map(field => <div key={field.n}><Lbl text={field.l} /><input className={fi("")} name={`textileDetails.${field.n}`} type={field.t || "text"} value={id.textileDetails?.[field.n] || ""} onChange={handleChange} /></div>)}</div></div>}
+            </div>}
+          </div>
         </div>
       );
 
@@ -1201,6 +1345,7 @@ const handleView = async (itemId) => {
 
   // LIST VIEW (unchanged except maybe variant count column)
   if (view === "list") return (
+    <ProtectedPage module="Items" action="view">
     <div className="min-h-screen bg-gray-50">
       {showScanner && <QRScannerModal onScanSuccess={handleScanSuccess} onManual={handleManualEntry} onClose={() => setShowScanner(false)} />}
           {viewModalOpen && <ViewItemModal item={viewItem} onClose={() => setViewModalOpen(false)} />}
@@ -1208,11 +1353,55 @@ const handleView = async (itemId) => {
         <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
           <div><h1 className="text-2xl font-extrabold tracking-tight text-gray-900">Item Management</h1><p className="text-sm text-gray-400 mt-0.5">{stats.total} total items</p></div>
           <div className="flex flex-wrap gap-2">
-            <button onClick={downloadTemplate} className="flex items-center gap-2 px-3.5 py-2 rounded-lg bg-gray-900 text-white text-sm font-semibold hover:bg-gray-700 transition-all"><FaDownload className="text-xs" /> Template</button>
-            <label className="flex items-center gap-2 px-3.5 py-2 rounded-lg bg-violet-600 text-white text-sm font-semibold hover:bg-violet-700 cursor-pointer transition-all">{uploading ? "Uploading…" : <><FaFileUpload className="text-xs" /> Bulk Upload</>}<input type="file" hidden accept=".csv" onChange={handleBulk} /></label>
-            <button onClick={handleCreateClick} className="flex items-center gap-2 px-3.5 py-2 rounded-lg bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 transition-all shadow-sm shadow-indigo-200"><FaPlus className="text-xs" /> Create Item</button>
+            {permissions.download && (
+              <button onClick={downloadTemplate} className="flex items-center gap-2 px-3.5 py-2 rounded-lg bg-gray-900 text-white text-sm font-semibold hover:bg-gray-700 transition-all"><FaDownload className="text-xs" /> Template</button>
+            )}
+            {permissions.upload && (
+              <label className={`flex items-center gap-2 px-3.5 py-2 rounded-lg bg-violet-600 text-white text-sm font-semibold transition-all ${uploading ? "cursor-not-allowed opacity-60" : "cursor-pointer hover:bg-violet-700"}`}>{uploading ? "Uploading..." : <><FaFileUpload className="text-xs" /> Bulk Upload</>}<input type="file" hidden accept=".csv,text/csv" disabled={uploading} onChange={handleBulk} /></label>
+            )}
+            {permissions.create && (
+              <button onClick={handleCreateClick} className="flex items-center gap-2 px-3.5 py-2 rounded-lg bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 transition-all shadow-sm shadow-indigo-200"><FaPlus className="text-xs" /> Create Item</button>
+            )}
           </div>
         </div>
+        {bulkReport && (
+          <div className={`mb-5 rounded-2xl border p-4 ${bulkReport.summary?.failed ? "border-amber-200 bg-amber-50" : "border-emerald-200 bg-emerald-50"}`}>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="font-bold text-gray-900">Item import report</p>
+                <p className="mt-0.5 text-sm text-gray-600">{bulkReport.message}</p>
+              </div>
+              <button type="button" onClick={() => setBulkReport(null)} className="rounded-lg p-1.5 text-gray-400 hover:bg-white" aria-label="Close import report"><FaTimes /></button>
+            </div>
+            <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-5">
+              {[
+                ["Total", bulkReport.summary?.total || 0],
+                ["Created", bulkReport.summary?.created || 0],
+                ["Updated", bulkReport.summary?.updated || 0],
+                ["Failed", bulkReport.summary?.failed || 0],
+                ["Groups created", bulkReport.summary?.groupsCreated || 0],
+              ].map(([label, count]) => (
+                <div key={label} className="rounded-xl bg-white/80 px-3 py-2">
+                  <p className="text-[10px] font-bold uppercase tracking-wide text-gray-400">{label}</p>
+                  <p className="text-lg font-extrabold text-gray-800">{count}</p>
+                </div>
+              ))}
+            </div>
+            {bulkReport.autoCreatedGroups?.length > 0 && (
+              <p className="mt-3 text-xs font-medium text-indigo-700">Auto-created groups: {bulkReport.autoCreatedGroups.join(", ")}</p>
+            )}
+            {bulkReport.results?.some((result) => !result.success) && (
+              <div className="mt-3 max-h-52 overflow-auto rounded-xl border border-red-200 bg-white">
+                {bulkReport.results.filter((result) => !result.success).map((result, index) => (
+                  <div key={`${result.row}-${index}`} className="flex gap-3 border-b border-red-100 px-3 py-2 text-sm last:border-0">
+                    <span className="shrink-0 font-bold text-red-600">Row {result.row}</span>
+                    <span className="text-red-700">{(result.errors || ["Import failed"]).join(", ")}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
           {[{ label:"Total", value:stats.total, emoji:"📦", filter:"All" },{ label:"Product", value:stats.product, emoji:"🛍️", filter:"Product" },{ label:"Service", value:stats.service, emoji:"🔧", filter:"Service" },{ label:"Raw Material", value:stats.rawMat, emoji:"⚙️", filter:"Raw Material" }].map(s => (
             <div key={s.label} onClick={() => { setFilterType(s.filter); setCurrentPage(1); }} className={`bg-white rounded-2xl p-4 flex items-center gap-3 cursor-pointer border-2 transition-all ${filterType===s.filter ? "border-indigo-400 shadow-md shadow-indigo-100" : "border-transparent shadow-sm hover:border-indigo-200 hover:-translate-y-0.5"}`}>
@@ -1243,9 +1432,15 @@ const handleView = async (itemId) => {
                     <td className="px-4 py-3 text-center">{it.variants?.length > 0 ? <span className="bg-amber-100 text-amber-700 text-[10px] font-bold px-1.5 py-0.5 rounded">{it.variants.length}</span> : <span className="text-gray-200">—</span>}</td>
                     <td className="px-4 py-3">{it.posEnabled ? <span className="text-[10.5px] font-semibold px-2 py-0.5 rounded-full bg-orange-50 text-orange-500">POS</span> : <span className="text-gray-200 text-xs">—</span>}</td>
                     <td className="px-4 py-3"><div className="flex gap-1.5">
-                      <button onClick={() => handleView(it._id)} className="w-7 h-7 rounded-lg bg-green-50 text-green-500 hover:bg-green-500 hover:text-white flex items-center justify-center"><FaEye className="text-xs" /></button>  
-                      <button onClick={() => handleEdit(it)} className="w-7 h-7 rounded-lg bg-indigo-50 text-indigo-500 hover:bg-indigo-500 hover:text-white flex items-center justify-center"><FaEdit className="text-xs" /></button>
-                      <button onClick={() => handleDelete(it._id)} className="w-7 h-7 rounded-lg bg-red-50 text-red-400 hover:bg-red-500 hover:text-white flex items-center justify-center"><FaTrash className="text-xs" /></button>
+                      {permissions.view && (
+                        <button onClick={() => handleView(it._id)} className="w-7 h-7 rounded-lg bg-green-50 text-green-500 hover:bg-green-500 hover:text-white flex items-center justify-center"><FaEye className="text-xs" /></button>
+                      )}
+                      {permissions.edit && (
+                        <button onClick={() => handleEdit(it)} className="w-7 h-7 rounded-lg bg-indigo-50 text-indigo-500 hover:bg-indigo-500 hover:text-white flex items-center justify-center"><FaEdit className="text-xs" /></button>
+                      )}
+                      {permissions.delete && (
+                        <button onClick={() => handleDelete(it._id)} className="w-7 h-7 rounded-lg bg-red-50 text-red-400 hover:bg-red-500 hover:text-white flex items-center justify-center"><FaTrash className="text-xs" /></button>
+                      )}
                       </div>
                     </td>
                   </tr>
@@ -1262,6 +1457,7 @@ const handleView = async (itemId) => {
       </div>
       <style>{`@keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}`}</style>
     </div>
+    </ProtectedPage>
   );
 
   // FORM VIEW
@@ -1292,13 +1488,1339 @@ const handleView = async (itemId) => {
           <div className="px-6 py-5">{renderStep()}</div>
           <div className="px-6 py-4 border-t border-gray-100 flex justify-between gap-3">
             <button onClick={goPrev} disabled={step === 1} className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-gray-200 text-gray-500 text-sm font-semibold disabled:opacity-30 hover:bg-gray-50"><FaChevronLeft className="text-xs" /> Back</button>
-            {step < STEPS.length ? <button onClick={goNext} className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700">Next <FaChevronRight className="text-xs" /></button> : <button onClick={handleSubmit} disabled={submitting} className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-emerald-600 text-white text-sm font-bold hover:bg-emerald-700 disabled:opacity-60">{submitting ? <FaSpinner className="animate-spin" /> : <FaCheck />}{submitting ? "Saving…" : id._id ? "Update Item" : "Save Item"}</button>}
+            {step < STEPS.length ? (
+              <button onClick={goNext} className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700">Next <FaChevronRight className="text-xs" /></button>
+            ) : (
+              <button
+                onClick={handleSubmit}
+                disabled={submitting || (id._id ? !permissions.edit : !permissions.create)}
+                className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-white text-sm font-bold transition-all ${
+                  submitting || (id._id ? !permissions.edit : !permissions.create)
+                    ? "bg-gray-300 cursor-not-allowed opacity-60"
+                    : "bg-emerald-600 hover:bg-emerald-700"
+                }`}
+              >
+                {submitting ? (
+                  <><FaSpinner className="animate-spin" /> Saving…</>
+                ) : id._id ? (
+                  permissions.edit ? <><FaCheck /> Update Item</> : "No Edit Permission"
+                ) : permissions.create ? (
+                  <><FaCheck /> Save Item</>
+                ) : (
+                  "No Create Permission"
+                )}
+              </button>
+            )}
           </div>
         </div>
       </div>
     </div>
   );
 }
+
+
+
+
+
+// "use client";
+
+// import React, { useState, useEffect, useRef, useCallback } from "react";
+// import axios from "axios";
+// import {
+//   FaEdit, FaTrash, FaPlus, FaSearch, FaArrowLeft,
+//   FaChevronLeft, FaChevronRight, FaCheck, FaFileUpload,
+//   FaDownload, FaExclamationCircle, FaBoxOpen, FaTag,
+//   FaShieldAlt, FaCashRegister, FaRuler, FaClipboardCheck,
+//   FaListUl, FaQrcode, FaTimes, FaKeyboard, FaCamera,
+//   FaCheckCircle, FaSpinner, FaImage, FaCloudUploadAlt,FaEye,
+//   FaPalette, FaRulerCombined, FaMinus
+// } from "react-icons/fa";
+// import { HiOutlineDocumentText } from "react-icons/hi";
+// import ItemGroupSearch from "./ItemGroupSearch";
+// import { toast } from "react-toastify";
+
+// // ── 7 Steps (added Variants) ──
+// const STEPS = [
+//   { id: 1, label: "Basic Info",   icon: FaBoxOpen },
+//   { id: 2, label: "Tax & GST",    icon: HiOutlineDocumentText },
+//   { id: 3, label: "Variants",     icon: FaListUl },
+//   { id: 4, label: "POS Settings", icon: FaCashRegister },
+//   { id: 5, label: "Quality",      icon: FaShieldAlt },
+//   { id: 6, label: "Dimensions",   icon: FaRuler },
+//   { id: 7, label: "Review",       icon: FaClipboardCheck },
+// ];
+
+// const INITIAL = {
+//   itemCode: "", itemName: "", description: "", category: "",
+//   unitPrice: "", quantity: "", reorderLevel: "", leadTime: "",
+//   itemType: "", uom: "", managedBy: "", managedValue: "",
+//   batchNumber: "", expiryDate: "", manufacturer: "",
+//   length: "", width: "", height: "", weight: "",
+//   gnr: false, delivery: false, productionProcess: false,
+//   includeQualityCheck: false, qualityCheckDetails: [],
+//   includeGST: true, includeIGST: true,
+//   gstCode: "", gstName: "", gstRate: "", cgstRate: "", sgstRate: "",
+//   igstCode: "", igstName: "", igstRate: "",
+//   status: "active", active: true,
+//   posEnabled: false,
+//   imageUrl: "",
+//   posConfig: {
+//     barcode: "", posPrice: "", allowDiscount: true,
+//     maxDiscountPercent: 100, taxableInPOS: true, showInPOS: true,
+//   },
+//   variants: [], // new
+// };
+
+// const VALIDATORS = {
+//   1: (d) => {
+//     const e = {};
+//     if (!d.itemName?.trim()) e.itemName  = "Item Name is required";
+//     if (!d.category?.trim()) e.category  = "Category is required";
+//     if (!d.unitPrice)        e.unitPrice = "Unit Price is required";
+//     if (d.quantity === "" || d.quantity === undefined) e.quantity = "Minimum Stock is required";
+//     if (!d.uom)     e.uom     = "Unit of Measure is required";
+//     if (!d.itemType) e.itemType = "Item Type is required";
+//     return e;
+//   },
+//   2: () => ({}), 3: () => ({}), 4: () => ({}), 5: () => ({}), 6: () => ({}), 7: () => ({}),
+// };
+
+// // ════════════════════════════════════════
+// // IMAGE UPLOAD COMPONENT (unchanged, but used for variant images)
+// // ════════════════════════════════════════
+// function ImageUpload({ imageUrl, onImageChange, disabled }) {
+//   const fileInputRef = useRef(null);
+//   const [uploading, setUploading] = useState(false);
+//   const [preview, setPreview] = useState(imageUrl || "");
+//   const [dragOver, setDragOver] = useState(false);
+
+//   useEffect(() => {
+//     setPreview(imageUrl || "");
+//   }, [imageUrl]);
+
+//   const uploadToCloudinary = async (file) => {
+//     if (!file) return;
+//     const allowedTypes = ["image/jpeg", "image/jpg", "image/png", "image/webp", "image/gif"];
+//     if (!allowedTypes.includes(file.type)) {
+//       toast.error("Only JPG, PNG, WebP or GIF images are allowed");
+//       return;
+//     }
+//     if (file.size > 5 * 1024 * 1024) {
+//       toast.error("Image must be smaller than 5MB");
+//       return;
+//     }
+
+//     setUploading(true);
+//     const localUrl = URL.createObjectURL(file);
+//     setPreview(localUrl);
+
+//     try {
+//       const token = localStorage.getItem("token");
+//       const formData = new FormData();
+//       formData.append("file", file);
+//       const res = await axios.post("/api/items/upload-image", formData, {
+//         headers: { Authorization: `Bearer ${token}`, "Content-Type": "multipart/form-data" },
+//       });
+//       if (res.data.success && res.data.imageUrl) {
+//         setPreview(res.data.imageUrl);
+//         onImageChange(res.data.imageUrl);
+//         toast.success("Image uploaded successfully");
+//       } else {
+//         throw new Error(res.data.message || "Upload failed");
+//       }
+//     } catch (err) {
+//       toast.error(err.response?.data?.message || "Image upload failed");
+//       setPreview(imageUrl || "");
+//       onImageChange(imageUrl || "");
+//     } finally {
+//       setUploading(false);
+//     }
+//   };
+
+//   const handleFile = (file) => {
+//     if (file && file.type.startsWith("image/")) {
+//       uploadToCloudinary(file);
+//     }
+//   };
+
+//   const handleDrop = (e) => {
+//     e.preventDefault();
+//     setDragOver(false);
+//     const file = e.dataTransfer.files[0];
+//     handleFile(file);
+//   };
+
+//   const handleRemove = () => {
+//     setPreview("");
+//     onImageChange("");
+//     if (fileInputRef.current) fileInputRef.current.value = "";
+//   };
+
+//   return (
+//     <div className="space-y-2">
+//       <label className="block text-[10.5px] font-bold uppercase tracking-wider text-gray-500 mb-1.5">
+//         Image
+//       </label>
+//       {preview ? (
+//         <div className="relative w-full max-w-xs group">
+//           <img
+//             src={preview}
+//             alt="Preview"
+//             className="w-full h-40 object-cover rounded-xl border border-gray-200 shadow-sm"
+//             onError={e => {
+//               e.target.onerror = null;
+//               e.target.src = "https://placehold.co/400x300/eeeeee/999999?text=Image+Error&font=montserrat";
+//             }}
+//           />
+//           {uploading && (
+//             <div className="absolute inset-0 bg-black/40 rounded-xl flex items-center justify-center">
+//               <div className="text-center text-white">
+//                 <FaSpinner className="animate-spin text-2xl mx-auto mb-1" />
+//                 <p className="text-xs font-semibold">Uploading…</p>
+//               </div>
+//             </div>
+//           )}
+//           {!uploading && !disabled && (
+//             <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 rounded-xl transition-all flex items-center justify-center opacity-0 group-hover:opacity-100 gap-2">
+//               <button
+//                 type="button"
+//                 onClick={() => fileInputRef.current?.click()}
+//                 className="p-2 bg-white rounded-lg text-indigo-600 hover:bg-indigo-600 hover:text-white transition-all shadow-md"
+//                 title="Change image"
+//               >
+//                 <FaCamera className="text-sm" />
+//               </button>
+//               <button
+//                 type="button"
+//                 onClick={handleRemove}
+//                 className="p-2 bg-white rounded-lg text-red-500 hover:bg-red-500 hover:text-white transition-all shadow-md"
+//                 title="Remove image"
+//               >
+//                 <FaTrash className="text-sm" />
+//               </button>
+//             </div>
+//           )}
+//         </div>
+//       ) : (
+//         <div
+//           onClick={() => !disabled && fileInputRef.current?.click()}
+//           onDragOver={e => { e.preventDefault(); setDragOver(true); }}
+//           onDragLeave={() => setDragOver(false)}
+//           onDrop={handleDrop}
+//           className={`relative w-full max-w-xs h-40 border-2 border-dashed rounded-xl flex flex-col items-center justify-center cursor-pointer transition-all
+//             ${dragOver
+//               ? "border-indigo-400 bg-indigo-50 scale-[1.01]"
+//               : "border-gray-200 bg-gray-50 hover:border-indigo-300 hover:bg-indigo-50/50"
+//             }
+//             ${disabled ? "opacity-50 cursor-not-allowed" : ""}
+//           `}
+//         >
+//           {uploading ? (
+//             <div className="text-center text-indigo-500">
+//               <FaSpinner className="animate-spin text-2xl mx-auto mb-2" />
+//               <p className="text-xs font-semibold">Uploading…</p>
+//             </div>
+//           ) : (
+//             <div className="text-center">
+//               <div className="w-12 h-12 rounded-xl bg-indigo-100 flex items-center justify-center mx-auto mb-2">
+//                 <FaCloudUploadAlt className="text-indigo-400 text-xl" />
+//               </div>
+//               <p className="text-xs font-bold text-gray-600">
+//                 {dragOver ? "Drop image here" : "Click or drag to upload"}
+//               </p>
+//               <p className="text-[10px] text-gray-400 mt-0.5">JPG, PNG, WebP · max 5MB</p>
+//             </div>
+//           )}
+//         </div>
+//       )}
+//       <input
+//         ref={fileInputRef}
+//         type="file"
+//         accept="image/jpeg,image/jpg,image/png,image/webp,image/gif"
+//         className="hidden"
+//         disabled={disabled || uploading}
+//         onChange={e => handleFile(e.target.files[0])}
+//       />
+//     </div>
+//   );
+// }
+// // ═══════════════════════════════════════════════════════════════════════════
+// // VIEW MODAL – new component for read-only details
+// // ═══════════════════════════════════════════════════════════════════════════
+// function InfoCard({ label, value, statusBadge }) {
+//   return (
+//     <div className="bg-gray-50 rounded-lg p-2">
+//       <p className="text-[9px] font-bold uppercase text-gray-400">{label}</p>
+//       {statusBadge ? (
+//         <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${value === "Active" ? "bg-emerald-100 text-emerald-600" : "bg-red-100 text-red-500"}`}>
+//           {value || "—"}
+//         </span>
+//       ) : (
+//         <p className="text-sm font-semibold text-gray-800">{value !== undefined && value !== null ? value : "—"}</p>
+//       )}
+//     </div>
+//   );
+// }
+
+// function ViewItemModal({ item, onClose }) {
+//   if (!item) return null;
+
+//   const fmtINR = (num) => `₹${Number(num || 0).toLocaleString("en-IN")}`;
+
+//   return (
+//     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.7)", backdropFilter: "blur(4px)" }}>
+//       <div className="bg-white rounded-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
+//         {/* Header */}
+//         <div className="sticky top-0 bg-white border-b px-6 py-4 flex justify-between items-center">
+//           <div className="flex items-center gap-3">
+//             {item.imageUrl ? (
+//               <img src={item.imageUrl} alt={item.itemName} className="w-10 h-10 object-cover rounded-lg border" />
+//             ) : (
+//               <div className="w-10 h-10 rounded-lg bg-indigo-100 flex items-center justify-center">
+//                 <FaBoxOpen className="text-indigo-500" />
+//               </div>
+//             )}
+//             <div>
+//               <h3 className="text-lg font-bold text-gray-900">{item.itemName || "—"}</h3>
+//               <p className="text-xs text-gray-400 font-mono">{item.itemCode || "—"}</p>
+//             </div>
+//           </div>
+//           <button onClick={onClose} className="w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center">
+//             <FaTimes />
+//           </button>
+//         </div>
+
+//         {/* Body */}
+//         <div className="p-6 space-y-5">
+//           {/* Basic Info */}
+//           <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+//             <InfoCard label="Category" value={item.category} />
+//             <InfoCard label="Type" value={item.itemType} />
+//             <InfoCard label="Status" value={item.status === "active" ? "Active" : "Inactive"} statusBadge />
+//             <InfoCard label="Unit Price" value={item.unitPrice ? fmtINR(item.unitPrice) : "—"} />
+//             <InfoCard label="Min. Stock" value={item.quantity} />
+//             <InfoCard label="UOM" value={item.uom} />
+//             <InfoCard label="Reorder Level" value={item.reorderLevel} />
+//             <InfoCard label="Lead Time" value={item.leadTime ? `${item.leadTime} days` : "—"} />
+//             <InfoCard label="Manufacturer" value={item.manufacturer} />
+//           </div>
+
+//           {item.description && (
+//             <div>
+//               <h4 className="text-xs font-bold uppercase text-gray-400 mb-1">Description</h4>
+//               <p className="text-sm text-gray-700">{item.description}</p>
+//             </div>
+//           )}
+
+//           {/* Dimensions */}
+//           {(item.length || item.width || item.height || item.weight) && (
+//             <div>
+//               <h4 className="text-xs font-bold uppercase text-gray-400 mb-2">Dimensions</h4>
+//               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+//                 {item.length && <InfoCard label="Length (cm)" value={item.length} />}
+//                 {item.width && <InfoCard label="Width (cm)" value={item.width} />}
+//                 {item.height && <InfoCard label="Height (cm)" value={item.height} />}
+//                 {item.weight && <InfoCard label="Weight (kg)" value={item.weight} />}
+//               </div>
+//             </div>
+//           )}
+
+//           {/* Tax */}
+//           <div>
+//             <h4 className="text-xs font-bold uppercase text-gray-400 mb-2">Tax</h4>
+//             <div className="grid grid-cols-2 gap-3">
+//               <InfoCard label="GST" value={item.includeGST ? `${item.gstRate || 0}%` : "Not applicable"} />
+//               <InfoCard label="IGST" value={item.includeIGST ? `${item.igstRate || 0}%` : "Not applicable"} />
+//             </div>
+//           </div>
+
+//           {/* POS Settings */}
+//           {item.posEnabled && (
+//             <div>
+//               <h4 className="text-xs font-bold uppercase text-gray-400 mb-2">POS Settings</h4>
+//               <div className="grid grid-cols-2 gap-3">
+//                 <InfoCard label="Barcode" value={item.posConfig?.barcode || "—"} />
+//                 <InfoCard label="POS Price" value={item.posConfig?.posPrice ? fmtINR(item.posConfig.posPrice) : fmtINR(item.unitPrice)} />
+//                 <InfoCard label="Allow Discount" value={item.posConfig?.allowDiscount ? "Yes" : "No"} />
+//                 <InfoCard label="Taxable" value={item.posConfig?.taxableInPOS ? "Yes" : "No"} />
+//               </div>
+//             </div>
+//           )}
+
+//           {/* Variants */}
+//           {item.variants && item.variants.length > 0 && (
+//             <div>
+//               <h4 className="text-xs font-bold uppercase text-gray-400 mb-2">Variants ({item.variants.length})</h4>
+//               <div className="space-y-2 max-h-64 overflow-y-auto">
+//                 {item.variants.map((v, i) => (
+//                   <div key={i} className="border border-gray-200 rounded-lg p-3 bg-gray-50">
+//                     <div className="flex justify-between items-start">
+//                       <div>
+//                         <span className="font-mono text-xs font-bold text-indigo-600">{v.sku || `Variant ${i+1}`}</span>
+//                         {Object.keys(v.attributes || {}).length > 0 && (
+//                           <div className="text-xs text-gray-500 mt-1">
+//                             {Object.entries(v.attributes).map(([k, val]) => `${k}: ${val}`).join(" · ")}
+//                           </div>
+//                         )}
+//                       </div>
+//                       {v.imageUrl && (
+//                         <img src={v.imageUrl} alt="variant" className="w-10 h-10 object-cover rounded border" />
+//                       )}
+//                     </div>
+//                     <div className="grid grid-cols-2 gap-2 mt-2 text-sm">
+//                       <span><strong>Price:</strong> {v.price ? fmtINR(v.price) : fmtINR(item.unitPrice)}</span>
+//                       <span><strong>Stock:</strong> {v.quantity ?? 0}</span>
+//                       {v.barcode && <span><strong>Barcode:</strong> {v.barcode}</span>}
+//                     </div>
+//                   </div>
+//                 ))}
+//               </div>
+//             </div>
+//           )}
+//         </div>
+
+//         {/* Footer */}
+//         <div className="sticky bottom-0 bg-white border-t px-6 py-4 flex justify-end">
+//           <button onClick={onClose} className="px-4 py-2 bg-gray-200 rounded-lg hover:bg-gray-300">
+//             Close
+//           </button>
+//         </div>
+//       </div>
+//     </div>
+//   );
+// }
+
+
+
+// // ════════════════════════════════════════
+// // QR SCANNER MODAL
+// // ════════════════════════════════════════
+// function QRScannerModal({ onScanSuccess, onManual, onClose }) {
+//   const videoRef    = useRef(null);
+//   const streamRef   = useRef(null);
+//   const rafRef      = useRef(null);
+//   const canvasRef   = useRef(null);
+//   const detectorRef = useRef(null);
+//   const [scanning,   setScanning]   = useState(false);
+//   const [camError,   setCamError]   = useState("");
+//   const [scanResult, setScanResult] = useState(null);
+//   const [fetching,   setFetching]   = useState(false);
+//   const [manualCode, setManualCode] = useState("");
+//   const [tab,        setTab]        = useState("camera");
+//   const [libStatus,  setLibStatus]  = useState("idle");
+
+//   const stopCamera = useCallback(() => {
+//     if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = null; }
+//     if (streamRef.current) {
+//       streamRef.current.getTracks().forEach(t => t.stop());
+//       streamRef.current = null;
+//     }
+//     setScanning(false);
+//   }, []);
+
+//   const tickDetect = useCallback(async () => {
+//     const video  = videoRef.current;
+//     const canvas = canvasRef.current;
+//     if (!video || !canvas || video.readyState < 2) {
+//       rafRef.current = requestAnimationFrame(tickDetect);
+//       return;
+//     }
+
+//     canvas.width  = video.videoWidth  || 640;
+//     canvas.height = video.videoHeight || 480;
+//     const ctx = canvas.getContext("2d");
+//     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+//     if (detectorRef.current) {
+//       try {
+//         const codes = await detectorRef.current.detect(video);
+//         if (codes && codes.length > 0) {
+//           handleCodeDetected(codes[0].rawValue);
+//           return;
+//         }
+//       } catch {}
+//     }
+
+//     if (window.jsQR) {
+//       try {
+//         const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+//         const code = window.jsQR(imageData.data, canvas.width, canvas.height, { inversionAttempts: "dontInvert" });
+//         if (code && code.data) {
+//           handleCodeDetected(code.data);
+//           return;
+//         }
+//       } catch {}
+//     }
+
+//     rafRef.current = requestAnimationFrame(tickDetect);
+//   }, []);
+
+//   const startCamera = useCallback(async () => {
+//     setCamError("");
+//     setScanResult(null);
+//     try {
+//       const stream = await navigator.mediaDevices.getUserMedia({
+//         video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 }, height: { ideal: 720 } }
+//       });
+//       streamRef.current = stream;
+//       const video = videoRef.current;
+//       if (video) {
+//         video.srcObject = stream;
+//         await new Promise((res, rej) => {
+//           video.onloadedmetadata = res;
+//           video.onerror = rej;
+//         });
+//         await video.play();
+//       }
+//       setScanning(true);
+//       if ("BarcodeDetector" in window) {
+//         try {
+//           detectorRef.current = new window.BarcodeDetector({
+//             formats: ["qr_code", "ean_13", "ean_8", "code_128", "code_39", "upc_a", "upc_e", "data_matrix", "itf"]
+//           });
+//         } catch { detectorRef.current = null; }
+//       }
+//       if (!detectorRef.current && !window.jsQR) {
+//         setLibStatus("loading");
+//         const script = document.createElement("script");
+//         script.src = "https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js";
+//         script.onload  = () => setLibStatus("ready");
+//         script.onerror = () => setLibStatus("error");
+//         document.head.appendChild(script);
+//       } else {
+//         setLibStatus("ready");
+//       }
+//       rafRef.current = requestAnimationFrame(tickDetect);
+//     } catch (err) {
+//       console.error(err);
+//       setCamError(
+//         err.name === "NotAllowedError"
+//           ? "Camera permission denied."
+//           : err.name === "NotFoundError"
+//           ? "No camera found."
+//           : `Camera error: ${err.message}`
+//       );
+//     }
+//   }, [tickDetect]);
+
+//   const mapQRToItem = (qr, code) => ({
+//     itemName: qr.itemName || qr.name || "",
+//     description: qr.description || qr.desc || "",
+//     category: qr.category || "",
+//     unitPrice: qr.unitPrice || qr.price || "",
+//     quantity: qr.quantity || qr.qty || "",
+//     reorderLevel: qr.reorderLevel || "",
+//     leadTime: qr.leadTime || "",
+//     itemType: qr.itemType || "Product",
+//     uom: qr.uom || "",
+//     manufacturer: qr.manufacturer || qr.brand || "",
+//     batchNumber: qr.batchNumber || qr.batch || "",
+//     expiryDate: qr.expiryDate || qr.expiry || "",
+//     gstRate: qr.gstRate || "",
+//     cgstRate: qr.cgstRate || (qr.gstRate ? qr.gstRate / 2 : ""),
+//     sgstRate: qr.sgstRate || (qr.gstRate ? qr.gstRate / 2 : ""),
+//     igstRate: qr.igstRate || "",
+//     posConfig: {
+//       barcode: code,
+//       posPrice: qr.posPrice || qr.price || "",
+//       allowDiscount: true,
+//       maxDiscountPercent: 100,
+//       taxableInPOS: true,
+//       showInPOS: true
+//     }
+//   });
+
+//   const handleCodeDetected = useCallback(async (code) => {
+//     if (!code) return;
+//     stopCamera();
+//     setScanResult(code);
+//     setFetching(true);
+//     try {
+//       const token = localStorage.getItem("token");
+//       const res = await axios.get(`/api/items/barcode/${encodeURIComponent(code)}`, {
+//         headers: { Authorization: `Bearer ${token}` }
+//       });
+//       if (res.data.success && res.data.data) {
+//         onScanSuccess(res.data.data, code);
+//         setFetching(false);
+//         return;
+//       }
+//     } catch {}
+//     try {
+//       const parsed = JSON.parse(code);
+//       if (parsed && (parsed.itemName || parsed.name)) {
+//         const mapped = mapQRToItem(parsed, code);
+//         onScanSuccess(mapped, code);
+//         setFetching(false);
+//         return;
+//       }
+//     } catch {}
+//     onScanSuccess({ posConfig: { barcode: code } }, code);
+//     setFetching(false);
+//   }, [stopCamera, onScanSuccess]);
+
+//   const handleManualSubmit = async () => {
+//     if (!manualCode.trim()) return;
+//     await handleCodeDetected(manualCode.trim());
+//   };
+
+//   useEffect(() => {
+//     if (tab === "camera") startCamera();
+//     return () => stopCamera();
+//   }, [tab]);
+
+//   return (
+//     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.7)", backdropFilter: "blur(4px)" }}>
+//       <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl overflow-hidden">
+//         <div className="bg-gradient-to-r from-indigo-600 to-violet-600 px-5 py-4 flex items-center justify-between">
+//           <div className="flex items-center gap-2.5">
+//             <div className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center">
+//               <FaQrcode className="text-white text-lg" />
+//             </div>
+//             <div>
+//               <p className="text-white font-bold text-sm">Scan to Auto-Fill</p>
+//               <p className="text-indigo-200 text-[11px]">Scan QR/Barcode or enter manually</p>
+//             </div>
+//           </div>
+//           <button onClick={() => { stopCamera(); onClose(); }} className="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-all">
+//             <FaTimes className="text-sm" />
+//           </button>
+//         </div>
+//         <div className="flex border-b border-gray-100">
+//           {[
+//             { key: "camera", icon: FaCamera, label: "Camera Scan" },
+//             { key: "manual", icon: FaKeyboard, label: "Manual Entry" },
+//           ].map(t => (
+//             <button key={t.key} onClick={() => setTab(t.key)} className={`flex-1 flex items-center justify-center gap-2 py-3 text-sm font-semibold border-b-2 transition-all ${tab === t.key ? "border-indigo-500 text-indigo-600 bg-indigo-50/50" : "border-transparent text-gray-400 hover:text-gray-600"}`}>
+//               <t.icon className="text-xs" />{t.label}
+//             </button>
+//           ))}
+//         </div>
+//         {tab === "camera" && (
+//           <div className="p-5 space-y-4">
+//             {camError ? (
+//               <div className="bg-red-50 border border-red-100 rounded-xl p-4 text-center">
+//                 <FaExclamationCircle className="text-red-400 text-2xl mx-auto mb-2" />
+//                 <p className="text-sm text-red-600 font-medium">{camError}</p>
+//                 <button onClick={() => setTab("manual")} className="mt-3 text-xs text-indigo-600 font-bold underline">Switch to Manual Entry →</button>
+//               </div>
+//             ) : scanResult ? (
+//               <div className="text-center py-6">
+//                 {fetching ? (
+//                   <>
+//                     <FaSpinner className="text-indigo-500 text-3xl mx-auto mb-3 animate-spin" />
+//                     <p className="text-sm font-semibold text-gray-700">Looking up item…</p>
+//                     <p className="text-xs text-gray-400 mt-1 font-mono break-all px-4">{scanResult}</p>
+//                   </>
+//                 ) : (
+//                   <>
+//                     <FaCheckCircle className="text-emerald-500 text-3xl mx-auto mb-3" />
+//                     <p className="text-sm font-semibold text-gray-700">Scanned successfully!</p>
+//                     <p className="text-xs text-gray-400 mt-1 font-mono break-all px-4">{scanResult}</p>
+//                   </>
+//                 )}
+//               </div>
+//             ) : (
+//               <>
+//                 <canvas ref={canvasRef} className="hidden" />
+//                 <div className="relative bg-black rounded-xl overflow-hidden" style={{ aspectRatio: "4/3" }}>
+//                   <video ref={videoRef} className="w-full h-full object-cover" muted playsInline />
+//                   <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+//                     <div className="relative w-52 h-52">
+//                       {[
+//                         ["top-0 left-0", "border-t-2 border-l-2 rounded-tl-lg"],
+//                         ["top-0 right-0", "border-t-2 border-r-2 rounded-tr-lg"],
+//                         ["bottom-0 left-0", "border-b-2 border-l-2 rounded-bl-lg"],
+//                         ["bottom-0 right-0", "border-b-2 border-r-2 rounded-br-lg"],
+//                       ].map(([pos, cls], i) => (
+//                         <div key={i} className={`absolute ${pos} w-8 h-8 border-indigo-400 ${cls}`} />
+//                       ))}
+//                       <div className="absolute left-2 right-2 h-0.5 bg-indigo-400 opacity-80" style={{ top: "50%", boxShadow: "0 0 8px #6366f1", animation: "scanline 2s ease-in-out infinite" }} />
+//                     </div>
+//                   </div>
+//                   <div className="absolute inset-0 pointer-events-none" style={{ background: "radial-gradient(ellipse 55% 55% at 50% 50%, transparent 50%, rgba(0,0,0,0.45) 100%)" }} />
+//                   {scanning && (
+//                     <div className="absolute bottom-3 left-0 right-0 flex justify-center">
+//                       <span className="bg-black/60 text-white text-[11px] font-medium px-3 py-1 rounded-full backdrop-blur-sm flex items-center gap-1.5">
+//                         <span className="w-1.5 h-1.5 rounded-full bg-red-400 animate-pulse inline-block" /> Scanning…
+//                       </span>
+//                     </div>
+//                   )}
+//                   {libStatus === "loading" && (
+//                     <div className="absolute top-3 left-0 right-0 flex justify-center">
+//                       <span className="bg-amber-500/90 text-white text-[10px] font-semibold px-3 py-1 rounded-full flex items-center gap-1.5">
+//                         <FaSpinner className="animate-spin text-[9px]" /> Loading scanner…
+//                       </span>
+//                     </div>
+//                   )}
+//                 </div>
+//                 <p className="text-center text-xs text-gray-400">Point camera at QR code or barcode on the product</p>
+//                 {!scanning && !camError && (
+//                   <button onClick={startCamera} className="w-full py-2 rounded-xl border border-indigo-200 text-indigo-600 text-sm font-semibold hover:bg-indigo-50 transition-all flex items-center justify-center gap-2">
+//                     <FaCamera className="text-xs" /> Restart Camera
+//                   </button>
+//                 )}
+//               </>
+//             )}
+//           </div>
+//         )}
+//         {tab === "manual" && (
+//           <div className="p-5 space-y-4">
+//             <div className="bg-amber-50 border border-amber-100 rounded-xl p-3 flex gap-2.5 items-start">
+//               <FaKeyboard className="text-amber-500 mt-0.5 shrink-0" />
+//               <p className="text-xs text-amber-700 font-medium">Enter barcode, item code, or scan using a hardware barcode scanner into the field below.</p>
+//             </div>
+//             <div>
+//               <label className="block text-[10.5px] font-bold uppercase tracking-wider text-gray-500 mb-1.5">Barcode / Item Code</label>
+//               <input autoFocus className="w-full px-3 py-2.5 rounded-lg border border-gray-200 text-sm font-mono font-medium focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 transition-all" placeholder="Scan or type barcode…" value={manualCode} onChange={e => setManualCode(e.target.value)} onKeyDown={e => e.key === "Enter" && handleManualSubmit()} />
+//             </div>
+//             <button onClick={handleManualSubmit} disabled={!manualCode.trim() || fetching} className="w-full py-2.5 bg-indigo-600 text-white rounded-xl font-semibold text-sm flex items-center justify-center gap-2 hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed transition-all">
+//               {fetching ? <FaSpinner className="animate-spin" /> : <FaSearch />}
+//               {fetching ? "Looking up…" : "Lookup Item"}
+//             </button>
+//           </div>
+//         )}
+//         <div className="px-5 pb-5">
+//           <div className="flex gap-2 pt-2 border-t border-gray-100">
+//             <button onClick={() => { stopCamera(); onManual(); }} className="flex-1 py-2.5 rounded-xl border-2 border-gray-200 text-gray-500 font-semibold text-sm hover:border-indigo-300 hover:text-indigo-600 transition-all flex items-center justify-center gap-2">
+//               <FaKeyboard className="text-xs" /> Fill Manually
+//             </button>
+//             <button onClick={() => { stopCamera(); onClose(); }} className="px-4 py-2.5 rounded-xl border border-gray-200 text-gray-400 text-sm font-medium hover:bg-gray-50 transition-all">Cancel</button>
+//           </div>
+//         </div>
+//       </div>
+//       <style>{`@keyframes scanline { 0% { top: 8%; } 50% { top: 88%; } 100% { top: 8%; } }`}</style>
+//     </div>
+//   );
+// }
+
+// // ════════════════════════════════════════
+// // MAIN COMPONENT
+// // ════════════════════════════════════════
+// export default function ItemManagement() {
+//   const [view, setView] = useState("list");
+//   const [items, setItems] = useState([]);
+//   const [searchTerm, setSearchTerm] = useState("");
+//   const [filterType, setFilterType] = useState("All");
+//   const [loading, setLoading] = useState(false);
+//   const [uploading, setUploading] = useState(false);
+//   const [submitting, setSubmitting] = useState(false);
+//   const [step, setStep] = useState(1);
+//   const [id, setId] = useState({ ...INITIAL });
+//   const [errs, setErrs] = useState({});
+//   const [showScanner, setShowScanner] = useState(false);
+//   const [currentPage, setCurrentPage] = useState(1);
+//   const [totalPages, setTotalPages] = useState(1);
+//   const [stats, setStats] = useState({ total: 0, product: 0, service: 0, rawMat: 0 });
+//    // View modal state
+//   const [viewItem, setViewItem] = useState(null);
+//   const [viewModalOpen, setViewModalOpen] = useState(false);
+//   const fetchAllItemsForStats = async () => {
+//     try {
+//       const token = localStorage.getItem("token");
+//       const res = await axios.get("/api/items?limit=1000", { headers: { Authorization: `Bearer ${token}` } });
+//       if (res.data.success) {
+//         const all = res.data.data;
+//         const total = all.length;
+//         const product = all.filter(i => i.itemType === "Product").length;
+//         const service = all.filter(i => i.itemType === "Service").length;
+//         const rawMat = all.filter(i => i.itemType === "Raw Material").length;
+//         setStats({ total, product, service, rawMat });
+//       }
+//     } catch (err) { console.error(err); }
+//   };
+
+//   const fetchItems = useCallback(async () => {
+//     setLoading(true);
+//     try {
+//       const token = localStorage.getItem("token");
+//       const params = {
+//         page: currentPage,
+//         limit: 10,
+//         search: searchTerm,
+//         itemType: filterType === "All" ? "" : filterType,
+//       };
+//       const res = await axios.get("/api/items", { params, headers: { Authorization: `Bearer ${token}` } });
+//       if (res.data.success) {
+//         setItems(res.data.data);
+//         setTotalPages(res.data.meta.pages);
+//       } else {
+//         toast.error(res.data.message);
+//       }
+//     } catch {
+//       toast.error("Failed to load items");
+//     }
+//     setLoading(false);
+//   }, [currentPage, searchTerm, filterType]);
+
+//   useEffect(() => {
+//     fetchItems();
+//     fetchAllItemsForStats();
+//   }, []);
+
+//   useEffect(() => {
+//     fetchItems();
+//   }, [fetchItems]);
+
+//   useEffect(() => {
+//     setCurrentPage(1);
+//   }, [searchTerm, filterType]);
+
+//   const refreshData = () => {
+//     fetchItems();
+//     fetchAllItemsForStats();
+//   };
+
+//   const generateCode = async () => {
+//     try {
+//       const token = localStorage.getItem("token");
+//       const res = await axios.get("/api/lastItemCode", { headers: { Authorization: `Bearer ${token}` } });
+//       const last = res.data.lastItemCode || "ITEM-0000";
+//       const num = parseInt(last.split("-")[1] || "0", 10) + 1;
+//       setId(p => ({ ...p, itemCode: `ITEM-${String(num).padStart(4, "0")}` }));
+//     } catch {}
+//   };
+//     // ✅ View function
+//  // Replace handleView with this:
+// const handleView = async (itemId) => {
+//   try {
+//     const token = localStorage.getItem("token");
+//     const res = await axios.get(`/api/items?id=${itemId}`, {
+//       headers: { Authorization: `Bearer ${token}` }
+//     });
+//     if (res.data.success) {
+//       setViewItem(res.data.data);
+//       setViewModalOpen(true);
+//     } else {
+//       toast.error("Failed to load item details");
+//     }
+//   } catch (err) {
+//     toast.error("Error loading item");
+//     console.error(err);
+//   }
+// };
+
+//   const handleScanSuccess = useCallback((scannedData, rawCode) => {
+//     setShowScanner(false);
+//     setId(prev => ({
+//       ...INITIAL,
+//       ...prev,
+//       ...scannedData,
+//       posConfig: { ...INITIAL.posConfig, ...(prev.posConfig || {}), ...(scannedData.posConfig || {}) },
+//       includeGST: scannedData.gstRate ? true : prev.includeGST,
+//       includeIGST: scannedData.igstRate ? true : prev.includeIGST,
+//     }));
+//     toast.success(scannedData.itemName ? `✓ Auto-filled: ${scannedData.itemName}` : `Barcode captured: ${rawCode} — please complete remaining fields`);
+//     setStep(1);
+//     setView("form");
+//   }, []);
+
+//   const handleCreateClick = async () => {
+//     await generateCode();
+//     setId(p => ({ ...INITIAL, itemCode: p.itemCode }));
+//     setStep(1);
+//     setErrs({});
+//     setShowScanner(true);
+//   };
+
+//   const handleManualEntry = () => {
+//     setShowScanner(false);
+//     setView("form");
+//   };
+
+//   const clearErr = (k) => setErrs(p => { const n = { ...p }; delete n[k]; return n; });
+
+//   const handleChange = (e) => {
+//     const { name, value, type, checked } = e.target;
+//     if (name.startsWith("posConfig.")) {
+//       const key = name.split(".")[1];
+//       setId(p => ({ ...p, posConfig: { ...(p.posConfig || {}), [key]: type === "checkbox" ? checked : value } }));
+//       return;
+//     }
+//     if (type === "checkbox") { setId(p => ({ ...p, [name]: checked })); return; }
+//     if (name === "gstRate") {
+//       const rate = parseFloat(value) || 0;
+//       setId(p => ({ ...p, gstRate: value, cgstRate: rate / 2, sgstRate: rate / 2 }));
+//       return;
+//     }
+//     setId(p => ({ ...p, [name]: value }));
+//     clearErr(name);
+//   };
+
+//   // Variant handlers
+//   const addVariant = () => {
+//     setId(p => ({
+//       ...p,
+//       variants: [...(p.variants || []), { sku: "", attributes: {}, price: p.unitPrice, quantity: 0, imageUrl: "", barcode: "", posPrice: p.unitPrice }]
+//     }));
+//   };
+//   const removeVariant = (idx) => {
+//     setId(p => ({ ...p, variants: p.variants.filter((_, i) => i !== idx) }));
+//   };
+//   const updateVariant = (idx, field, value) => {
+//     setId(p => {
+//       const variants = [...p.variants];
+//       variants[idx] = { ...variants[idx], [field]: value };
+//       return { ...p, variants };
+//     });
+//   };
+//   const updateVariantAttribute = (idx, attrKey, attrValue) => {
+//     setId(p => {
+//       const variants = [...p.variants];
+//       const attrs = variants[idx].attributes || {};
+//       if (attrValue === "") delete attrs[attrKey];
+//       else attrs[attrKey] = attrValue;
+//       variants[idx].attributes = attrs;
+//       return { ...p, variants };
+//     });
+//   };
+//   const addVariantAttribute = (idx, newKey, newVal) => {
+//     if (!newKey.trim()) return;
+//     setId(p => {
+//       const variants = [...p.variants];
+//       const attrs = variants[idx].attributes || {};
+//       attrs[newKey.trim()] = newVal.trim();
+//       variants[idx].attributes = attrs;
+//       return { ...p, variants };
+//     });
+//   };
+
+//   const handleQCChange = (i, e) => {
+//     const { name, value } = e.target;
+//     setId(p => { const q = [...p.qualityCheckDetails]; q[i] = { ...q[i], [name]: value }; return { ...p, qualityCheckDetails: q }; });
+//   };
+//   const addQC = () => setId(p => ({ ...p, qualityCheckDetails: [...p.qualityCheckDetails, { srNo: "", parameter: "", min: "", max: "" }] }));
+//   const removeQC = (i) => setId(p => ({ ...p, qualityCheckDetails: p.qualityCheckDetails.filter((_, j) => j !== i) }));
+
+//   const goNext = () => {
+//     const v = VALIDATORS[step];
+//     if (v) { const e = v(id); if (Object.keys(e).length) { setErrs(e); toast.error(Object.values(e)[0]); return; } }
+//     setErrs({});
+//     setStep(s => s + 1);
+//   };
+//   const goPrev = () => { setErrs({}); setStep(s => s - 1); };
+
+//   const handleSubmit = async () => {
+//     const allE = VALIDATORS[1](id);
+//     if (Object.keys(allE).length) { setErrs(allE); toast.error("Fix required fields"); return; }
+//     setSubmitting(true);
+//     const token = localStorage.getItem("token");
+//     const toNum = (v) => (v === "" || v == null ? undefined : Number(v));
+//     const payload = {
+//       ...id,
+//       unitPrice: Number(id.unitPrice || 0),
+//       quantity: Number(id.quantity || 0),
+//       reorderLevel: toNum(id.reorderLevel),
+//       leadTime: toNum(id.leadTime),
+//       length: toNum(id.length),
+//       width: toNum(id.width),
+//       height: toNum(id.height),
+//       weight: toNum(id.weight),
+//       gstRate: toNum(id.gstRate),
+//       cgstRate: toNum(id.cgstRate),
+//       sgstRate: toNum(id.sgstRate),
+//       igstRate: toNum(id.igstRate),
+//       posEnabled: !!id.posEnabled,
+//       imageUrl: id.imageUrl || "",
+//       posConfig: {
+//         ...id.posConfig,
+//         posPrice: toNum(id.posConfig?.posPrice),
+//         maxDiscountPercent: id.posConfig?.maxDiscountPercent === "" ? 100 : Number(id.posConfig?.maxDiscountPercent ?? 100),
+//         allowDiscount: id.posConfig?.allowDiscount ?? true,
+//         taxableInPOS: id.posConfig?.taxableInPOS ?? true,
+//         showInPOS: id.posConfig?.showInPOS ?? true,
+//       },
+//       variants: (id.variants || []).map(v => ({
+//         ...v,
+//         price: toNum(v.price),
+//         quantity: toNum(v.quantity) || 0,
+//         posPrice: toNum(v.posPrice),
+//       })),
+//     };
+//     try {
+//       if (id._id) {
+//         const res = await axios.put(`/api/items/${id._id}`, payload, { headers: { Authorization: `Bearer ${token}` } });
+//         if (res.data.success) { toast.success("Item updated!"); refreshData(); }
+//         else toast.error(res.data.message || "Update failed");
+//       } else {
+//         const res = await axios.post("/api/items", payload, { headers: { Authorization: `Bearer ${token}` } });
+//         if (res.data.success) { toast.success("Item created!"); refreshData(); }
+//         else toast.error(res.data.message || "Create failed");
+//       }
+//       reset();
+//     } catch (err) { toast.error(err.response?.data?.message || "Something went wrong"); }
+//     setSubmitting(false);
+//   };
+
+//   const reset = () => { setId({ ...INITIAL }); setStep(1); setErrs({}); setView("list"); setCurrentPage(1); };
+//   const handleEdit = async (item) => {
+//     try {
+//       const token = localStorage.getItem("token");
+//       const res = await axios.get(`/api/items?id=${item._id}`, { headers: { Authorization: `Bearer ${token}` } });
+//       if (res.data.success) {
+//         setId({ ...res.data.data, variants: res.data.data.variants || [] });
+//         setStep(1);
+//         setErrs({});
+//         setView("form");
+//       } else toast.error("Failed to load item details");
+//     } catch { toast.error("Error loading item"); }
+//   };
+//   const handleDelete = async (itemId) => {
+//     if (!confirm("Delete this item?")) return;
+//     try {
+//       const token = localStorage.getItem("token");
+//       await axios.delete(`/api/items/${itemId}`, { headers: { Authorization: `Bearer ${token}` } });
+//       toast.success("Item deleted");
+//       refreshData();
+//     } catch { toast.error("Delete failed"); }
+//   };
+
+//   const downloadTemplate = async () => {
+//     try {
+//       const res = await fetch("/api/items/template");
+//       if (!res.ok) throw new Error();
+//       const blob = await res.blob();
+//       const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "item_template.csv"; a.click();
+//     } catch { toast.error("Error downloading template"); }
+//   };
+
+//   const handleBulk = async (e) => {
+//     const file = e.target.files[0]; if (!file) return;
+//     setUploading(true);
+//     try {
+//       const token = localStorage.getItem("token");
+//       const text = await file.text();
+//       const lines = text.split("\n").filter(l => l.trim());
+//       const hdrs = lines[0].split(",").map(h => h.trim());
+//       const jsonData = lines.slice(1).map(line => { const v = line.split(","); const o = {}; hdrs.forEach((k, i) => (o[k] = v[i]?.trim() || "")); return o; });
+//       const res = await axios.post("/api/items/bulk", { items: jsonData }, { headers: { Authorization: `Bearer ${token}` } });
+//       const { success, results } = res.data;
+//       if (success) {
+//         const cr = results.filter(r => r.success && r.action === "created").length;
+//         const up = results.filter(r => r.success && r.action === "updated").length;
+//         const sk = results.filter(r => !r.success).length;
+//         toast.success(`${cr} created · ${up} updated · ${sk} skipped`);
+//         results.filter(r => r.warnings?.length).forEach(r => toast.warn(`Row ${r.row}: ${r.warnings.join(", ")}`));
+//         refreshData();
+//       } else toast.error(res.data.message || "Bulk upload failed");
+//     } catch { toast.error("Invalid CSV or server error"); }
+//     finally { setUploading(false); e.target.value = ""; }
+//   };
+
+//   const Err = ({ k }) => errs[k] ? <p className="flex items-center gap-1 mt-1 text-xs text-red-500 font-medium"><FaExclamationCircle className="text-[10px] shrink-0" />{errs[k]}</p> : null;
+//   const fi = (k, extra = "") => `w-full px-3 py-2.5 rounded-lg border text-sm font-medium transition-all outline-none ${extra} ${errs[k] ? "border-red-400 ring-2 ring-red-100 bg-red-50 placeholder:text-red-300" : "border-gray-200 bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 placeholder:text-gray-300"}`;
+//   const Lbl = ({ text, req }) => <label className="block text-[10.5px] font-bold uppercase tracking-wider text-gray-500 mb-1.5">{text}{req && <span className="text-red-500 ml-0.5">*</span>}</label>;
+//   const Toggle = ({ name, checked, label, nested }) => (
+//     <label className="flex items-center gap-2.5 cursor-pointer group">
+//       <div className={`relative w-9 h-5 rounded-full transition-all ${checked ? "bg-indigo-500" : "bg-gray-200"}`} onClick={() => nested ? setId(p => ({ ...p, posConfig: { ...(p.posConfig || {}), [name.split(".")[1]]: !checked } })) : setId(p => ({ ...p, [name]: !checked }))}>
+//         <div className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-all ${checked ? "translate-x-4" : "translate-x-0"}`} />
+//       </div>
+//       <span className="text-sm font-medium text-gray-700 group-hover:text-gray-900">{label}</span>
+//     </label>
+//   );
+//   const RRow = ({ l, v }) => <div className="flex justify-between py-2 border-b border-gray-100 last:border-0"><span className="text-[10.5px] font-bold uppercase tracking-wider text-gray-400">{l}</span><span className="text-sm font-semibold text-gray-800 text-right max-w-[60%] truncate">{v || <span className="text-gray-300 font-normal italic text-xs">—</span>}</span></div>;
+
+//   // ── Step Content ──
+//   const renderStep = () => {
+//     switch (step) {
+//       case 1: return (
+//         <div className="space-y-4">
+//           {/* QR Scan banner */}
+//           <div className="flex items-center gap-3 bg-gradient-to-r from-indigo-50 to-violet-50 border border-indigo-100 rounded-xl px-4 py-3">
+//             <FaQrcode className="text-indigo-500 text-xl shrink-0" />
+//             <div className="flex-1 min-w-0">
+//               <p className="text-xs font-bold text-indigo-800">Scan product barcode / QR code</p>
+//               <p className="text-[11px] text-indigo-500">Auto-fill fields by scanning the product packaging</p>
+//             </div>
+//             <button type="button" onClick={() => setShowScanner(true)} className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 text-white rounded-lg text-xs font-bold hover:bg-indigo-700 transition-all shrink-0">
+//               <FaCamera className="text-[10px]" /> Scan
+//             </button>
+//           </div>
+
+//           {/* Image Upload */}
+//           <ImageUpload imageUrl={id.imageUrl} onImageChange={(url) => setId(p => ({ ...p, imageUrl: url }))} />
+
+//           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+//             <div><Lbl text="Item Code" /><input className={`${fi("")} bg-gray-100 cursor-not-allowed text-gray-400`} value={id.itemCode || ""} readOnly /><p className="text-[11px] text-gray-400 mt-1">Auto-generated</p></div>
+//             <div><Lbl text="Item Name" req /><input className={fi("itemName")} name="itemName" value={id.itemName || ""} onChange={handleChange} placeholder="e.g. Steel Rod 10mm" /><Err k="itemName" /></div>
+//           </div>
+
+//           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+//             <div><Lbl text="Category" req /><ItemGroupSearch onSelectItemGroup={g => { setId(p => ({ ...p, category: g.name })); clearErr("category"); }} />{id.category && <p className="text-xs text-indigo-600 font-semibold mt-1.5 flex items-center gap-1"><FaTag className="text-[10px]" /> {id.category}</p>}<Err k="category" /></div>
+//             <div><Lbl text="Item Type" req /><select className={fi("itemType")} name="itemType" value={id.itemType || ""} onChange={handleChange}><option value="">Select type…</option><option>Product</option><option>Service</option><option>Raw Material</option></select><Err k="itemType" /></div>
+//           </div>
+
+//           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+//             <div><Lbl text="Unit Price (₹)" req /><input className={fi("unitPrice")} name="unitPrice" type="number" min="0" step="0.01" placeholder="0.00" value={id.unitPrice || ""} onChange={handleChange} /><Err k="unitPrice" /></div>
+//             <div><Lbl text="Min. Stock" req /><input className={fi("quantity")} name="quantity" type="number" min="0" placeholder="0" value={id.quantity || ""} onChange={handleChange} /><Err k="quantity" /></div>
+//             <div><Lbl text="Reorder Level" /><input className={fi("")} name="reorderLevel" type="number" min="0" placeholder="0" value={id.reorderLevel || ""} onChange={handleChange} /></div>
+//           </div>
+
+//           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+//             <div><Lbl text="Lead Time (Days)" /><input className={fi("")} name="leadTime" type="number" min="1" placeholder="7" value={id.leadTime || ""} onChange={handleChange} /></div>
+//             <div><Lbl text="Unit of Measure" req /><select className={fi("uom")} name="uom" value={id.uom || ""} onChange={handleChange}><option value="">Select UOM…</option><option value="KG">Kilogram (KG)</option><option value="MTP">Metric Ton (MTP)</option><option value="PC">Piece (PC)</option><option value="LTR">Liter (LTR)</option><option value="MTR">Meter (MTR)</option></select><Err k="uom" /></div>
+//             <div><Lbl text="Managed By" /><select className={fi("")} name="managedBy" value={id.managedBy || ""} onChange={handleChange}><option value="">Select method…</option><option value="batch">Batch</option><option value="serial">Serial Number</option><option value="none">Not Managed</option></select></div>
+//           </div>
+
+//           <div><Lbl text="Description" /><textarea className={`${fi("")} resize-none`} name="description" rows={3} placeholder="Brief description of this item…" value={id.description || ""} onChange={handleChange} /></div>
+//           <div className="flex items-center gap-4 pt-2"><Lbl text="Status" /><select className={`${fi("")} w-auto`} name="status" value={id.status || "active"} onChange={handleChange}><option value="active">Active</option><option value="inactive">Inactive</option></select></div>
+//         </div>
+//       );
+
+//       case 2: return (
+//         <div className="space-y-5">
+//           <div className="flex gap-6"><Toggle name="includeGST" checked={id.includeGST} label="Include GST" /><Toggle name="includeIGST" checked={id.includeIGST} label="Include IGST" /></div>
+//           {id.includeGST && (
+//             <div className="bg-blue-50 border border-blue-100 rounded-xl p-5">
+//               <p className="text-sm font-bold text-blue-800 mb-4 flex items-center gap-2"><HiOutlineDocumentText /> GST Details</p>
+//               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+//                 <div><Lbl text="GST Code" /><input className={fi("")} name="gstCode" value={id.gstCode || ""} onChange={handleChange} placeholder="e.g. GST18" /></div>
+//                 <div><Lbl text="GST Name" /><input className={fi("")} name="gstName" value={id.gstName || ""} onChange={handleChange} placeholder="e.g. GST 18%" /></div>
+//                 <div><Lbl text="GST Rate (%)" /><input className={fi("")} name="gstRate" type="number" min="0" max="100" step="0.1" placeholder="0" value={id.gstRate || ""} onChange={handleChange} /><p className="text-[11px] text-blue-500 mt-1">CGST & SGST will be auto-split (half each)</p></div>
+//                 <div className="grid grid-cols-2 gap-3"><div><Lbl text="CGST (%)" /><input className={`${fi("")} bg-gray-100 cursor-not-allowed text-gray-400`} value={id.cgstRate || ""} readOnly /></div><div><Lbl text="SGST (%)" /><input className={`${fi("")} bg-gray-100 cursor-not-allowed text-gray-400`} value={id.sgstRate || ""} readOnly /></div></div>
+//               </div>
+//             </div>
+//           )}
+//           {id.includeIGST && (
+//             <div className="bg-purple-50 border border-purple-100 rounded-xl p-5">
+//               <p className="text-sm font-bold text-purple-800 mb-4 flex items-center gap-2"><HiOutlineDocumentText /> IGST Details</p>
+//               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+//                 <div><Lbl text="IGST Code" /><input className={fi("")} name="igstCode" value={id.igstCode || ""} onChange={handleChange} placeholder="e.g. IGST18" /></div>
+//                 <div><Lbl text="IGST Name" /><input className={fi("")} name="igstName" value={id.igstName || ""} onChange={handleChange} placeholder="e.g. IGST 18%" /></div>
+//                 <div><Lbl text="IGST Rate (%)" /><input className={fi("")} name="igstRate" type="number" min="0" max="100" step="0.1" placeholder="0" value={id.igstRate || ""} onChange={handleChange} /></div>
+//               </div>
+//             </div>
+//           )}
+//           {!id.includeGST && !id.includeIGST && (
+//             <div className="text-center py-8 text-gray-300"><HiOutlineDocumentText className="text-5xl mx-auto mb-2 opacity-30" /><p className="text-sm font-medium">Enable GST or IGST above to configure tax details</p></div>
+//           )}
+//         </div>
+//       );
+
+//       case 3: return ( // Variants Step
+//         <div className="space-y-5">
+//           <div className="bg-amber-50 border border-amber-100 rounded-xl p-4 flex items-start gap-3">
+//             <FaListUl className="text-amber-600 text-xl shrink-0" />
+//             <div><p className="text-sm font-bold text-amber-800">Product Variants</p><p className="text-xs text-amber-600">Add variants like size, color, material with their own price, stock and barcode.</p></div>
+//           </div>
+//           <button type="button" onClick={addVariant} className="flex items-center gap-2 px-4 py-2 bg-indigo-50 text-indigo-600 rounded-lg text-sm font-semibold hover:bg-indigo-100 transition-all"><FaPlus className="text-xs" /> Add Variant</button>
+//           <div className="space-y-4">
+//             {(id.variants || []).map((variant, idx) => (
+//               <div key={idx} className="border border-gray-200 rounded-xl p-4 bg-gray-50">
+//                 <div className="flex justify-between items-center mb-3">
+//                   <h4 className="font-bold text-gray-700">Variant #{idx + 1}</h4>
+//                   <button type="button" onClick={() => removeVariant(idx)} className="text-red-400 hover:text-red-600"><FaTrash className="text-sm" /></button>
+//                 </div>
+//                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
+//                   <div><Lbl text="SKU" /><input className={fi("")} value={variant.sku || ""} onChange={e => updateVariant(idx, "sku", e.target.value)} placeholder="Unique code" /></div>
+//                   <div><Lbl text="Barcode" /><input className={fi("")} value={variant.barcode || ""} onChange={e => updateVariant(idx, "barcode", e.target.value)} placeholder="Optional" /></div>
+//                   <div><Lbl text="Price (₹)" /><input type="number" step="0.01" className={fi("")} value={variant.price || ""} onChange={e => updateVariant(idx, "price", e.target.value)} placeholder="Override base price" /></div>
+//                   <div><Lbl text="Stock" /><input type="number" className={fi("")} value={variant.quantity || 0} onChange={e => updateVariant(idx, "quantity", e.target.value)} /></div>
+//                   <div><Lbl text="POS Price (₹)" /><input type="number" step="0.01" className={fi("")} value={variant.posPrice || ""} onChange={e => updateVariant(idx, "posPrice", e.target.value)} placeholder="Override POS price" /></div>
+//                 </div>
+//                 <div><Lbl text="Variant Image" /><ImageUpload imageUrl={variant.imageUrl || ""} onImageChange={(url) => updateVariant(idx, "imageUrl", url)} disabled={false} /></div>
+//                 <div className="mt-3">
+//                   <label className="block text-[10.5px] font-bold uppercase tracking-wider text-gray-500 mb-1.5">Attributes (e.g., Color: Red, Size: L)</label>
+//                   <div className="space-y-2">
+//                     {Object.entries(variant.attributes || {}).map(([key, val]) => (
+//                       <div key={key} className="flex gap-2 items-center">
+//                         <input className={`${fi("")} w-1/3 bg-gray-100` } value={key} readOnly disabled  />
+//                         <input className={`${fi("")} w-1/3`} value={val} onChange={e => updateVariantAttribute(idx, key, e.target.value)} />
+//                         <button type="button" onClick={() => updateVariantAttribute(idx, key, "")} className="text-red-400 hover:text-red-600"><FaMinus className="text-xs" /></button>
+//                       </div>
+//                     ))}
+//                     <div className="flex gap-2">
+//                       <input type="text" placeholder="Attribute name (e.g. Color)" className={`${fi("")} w-1/3`} id={`attrKey-${idx}`} />
+//                       <input type="text" placeholder="Value (e.g. Red)" className={`${fi("")} w-1/3`} id={`attrVal-${idx}`} />
+//                       <button type="button" onClick={() => {
+//                         const keyInp = document.getElementById(`attrKey-${idx}`);
+//                         const valInp = document.getElementById(`attrVal-${idx}`);
+//                         if (keyInp.value.trim()) {
+//                           addVariantAttribute(idx, keyInp.value, valInp.value);
+//                           keyInp.value = "";
+//                           valInp.value = "";
+//                         }
+//                       }} className="px-3 py-2 bg-gray-200 rounded-lg text-gray-600 text-sm">+ Add</button>
+//                     </div>
+//                   </div>
+//                 </div>
+//               </div>
+//             ))}
+//           </div>
+//         </div>
+//       );
+
+//       case 4: return (
+//         <div className="space-y-5">
+//           <div className="bg-gradient-to-br from-orange-50 to-amber-50 border border-orange-200 rounded-xl p-4 flex items-start gap-3">
+//             <FaCashRegister className="text-orange-500 text-xl mt-0.5 shrink-0" />
+//             <div><p className="text-sm font-bold text-orange-800 mb-0.5">POS (Point of Sale)</p><p className="text-xs text-orange-600">Enable this item to be sold through the POS system.</p></div>
+//           </div>
+//           <Toggle name="posEnabled" checked={id.posEnabled} label="Enable this item for POS (Sellable)" />
+//           {id.posEnabled && (
+//             <div className="border border-gray-200 rounded-xl p-5 space-y-5">
+//               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+//                 <div><Lbl text="Barcode" /><input className={fi("")} name="posConfig.barcode" value={id.posConfig?.barcode || ""} onChange={handleChange} placeholder="Scan or enter barcode" /></div>
+//                 <div><Lbl text="POS Price (Optional override)" /><input className={fi("")} name="posConfig.posPrice" type="number" min="0" step="0.01" placeholder={`Leave blank → uses ₹${id.unitPrice || 0}`} value={id.posConfig?.posPrice ?? ""} onChange={handleChange} /><p className="text-[11px] text-gray-400 mt-1">Empty = uses Unit Price: <strong>₹{id.unitPrice || 0}</strong></p></div>
+//               </div>
+//               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+//                 <div className="space-y-3"><Toggle name="posConfig.allowDiscount" checked={id.posConfig?.allowDiscount ?? true} label="Allow Discount in POS" nested /><Toggle name="posConfig.taxableInPOS" checked={id.posConfig?.taxableInPOS ?? true} label="Taxable in POS" nested /><Toggle name="posConfig.showInPOS" checked={id.posConfig?.showInPOS ?? true} label="Show in POS list" nested /></div>
+//                 <div><Lbl text="Max Discount (%)" /><input className={fi("")} name="posConfig.maxDiscountPercent" type="number" min="0" max="100" value={id.posConfig?.maxDiscountPercent ?? 100} onChange={handleChange} disabled={!(id.posConfig?.allowDiscount ?? true)} /></div>
+//               </div>
+//             </div>
+//           )}
+//         </div>
+//       );
+
+//       case 5: return (
+//         <div className="space-y-4">
+//           <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-4 flex items-start gap-3"><FaShieldAlt className="text-emerald-500 mt-0.5 shrink-0" /><p className="text-xs text-emerald-700 font-medium">Define quality parameters for inspection during GRN or production.</p></div>
+//           <Toggle name="includeQualityCheck" checked={id.includeQualityCheck} label="Include Quality Checks" />
+//           {id.includeQualityCheck && (
+//             <div>
+//               <div className="grid grid-cols-12 gap-2 mb-2 px-1">{["Sr.", "Parameter", "Min", "Max", ""].map((h, i) => (<div key={i} className={`text-[10px] font-bold uppercase tracking-wider text-gray-400 ${i===0?"col-span-1":i===1?"col-span-5":i===4?"col-span-1":"col-span-2"}`}>{h}</div>))}</div>
+//               <div className="space-y-2">
+//                 {id.qualityCheckDetails.map((qc, i) => (
+//                   <div key={i} className="grid grid-cols-12 gap-2 items-center bg-gray-50 rounded-lg px-2 py-1.5">
+//                     <div className="col-span-1"><input className="w-full px-2 py-1.5 text-sm rounded border border-gray-200 bg-white focus:outline-none focus:border-indigo-400 text-center font-mono" name="srNo" placeholder="#" value={qc.srNo} onChange={e => handleQCChange(i, e)} /></div>
+//                     <div className="col-span-5"><input className="w-full px-2 py-1.5 text-sm rounded border border-gray-200 bg-white focus:outline-none focus:border-indigo-400" name="parameter" placeholder="e.g. Tensile Strength" value={qc.parameter} onChange={e => handleQCChange(i, e)} /></div>
+//                     <div className="col-span-2"><input className="w-full px-2 py-1.5 text-sm rounded border border-gray-200 bg-white focus:outline-none focus:border-indigo-400" name="min" placeholder="Min" value={qc.min} onChange={e => handleQCChange(i, e)} /></div>
+//                     <div className="col-span-2"><input className="w-full px-2 py-1.5 text-sm rounded border border-gray-200 bg-white focus:outline-none focus:border-indigo-400" name="max" placeholder="Max" value={qc.max} onChange={e => handleQCChange(i, e)} /></div>
+//                     <div className="col-span-2 flex justify-end"><button type="button" onClick={() => removeQC(i)} className="w-7 h-7 rounded-lg bg-red-50 text-red-400 hover:bg-red-500 hover:text-white flex items-center justify-center"><FaTrash className="text-xs" /></button></div>
+//                   </div>
+//                 ))}
+//               </div>
+//               <button type="button" onClick={addQC} className="mt-3 w-full py-2.5 border-2 border-dashed border-gray-200 rounded-xl text-indigo-500 font-semibold text-sm flex items-center justify-center gap-2 hover:border-indigo-400 hover:bg-indigo-50"><FaPlus className="text-xs" /> Add Quality Parameter</button>
+//             </div>
+//           )}
+//         </div>
+//       );
+
+//       case 6: return (
+//         <div className="space-y-5">
+//           <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 flex items-start gap-3"><FaRuler className="text-blue-500 mt-0.5 shrink-0" /><p className="text-xs text-blue-700 font-medium">Physical dimensions and weight are used for logistics and warehouse management. All optional.</p></div>
+//           <div><p className="text-sm font-bold text-gray-700 mb-3">Dimensions</p><div className="grid grid-cols-2 sm:grid-cols-4 gap-4">{[{n:"length",l:"Length (cm)",ph:"0"},{n:"width",l:"Width (cm)",ph:"0"},{n:"height",l:"Height (cm)",ph:"0"},{n:"weight",l:"Weight (kg)",ph:"0.00",step:"0.01"}].map(f => (<div key={f.n}><Lbl text={f.l} /><input className={fi("")} name={f.n} type="number" min="0" step={f.step||"1"} placeholder={f.ph} value={id[f.n]||""} onChange={handleChange} /></div>))}</div></div>
+//           <div className="border-t border-gray-100 pt-5"><p className="text-sm font-bold text-gray-700 mb-3">Additional Details</p><div className="grid grid-cols-1 sm:grid-cols-2 gap-4"><div><Lbl text="Manufacturer" /><input className={fi("")} name="manufacturer" value={id.manufacturer||""} onChange={handleChange} placeholder="e.g. Tata Steel" /></div><div><Lbl text="Expiry Date" /><input className={fi("")} name="expiryDate" type="date" value={id.expiryDate||""} onChange={handleChange} /></div><div><Lbl text="Batch Number" /><input className={fi("")} name="batchNumber" value={id.batchNumber||""} onChange={handleChange} placeholder="e.g. BATCH-2024-001" /></div></div><div className="mt-4 flex flex-wrap gap-4"><Toggle name="gnr" checked={id.gnr} label="GNR Applicable" /><Toggle name="delivery" checked={id.delivery} label="Delivery Item" /><Toggle name="productionProcess" checked={id.productionProcess} label="Production Process" /></div></div>
+//         </div>
+//       );
+
+//       case 7: return (
+//         <div className="space-y-4">
+//           <p className="text-sm text-gray-500">Review all details before saving.</p>
+//           {id.imageUrl && (<div className="bg-gray-50 rounded-xl p-4 border border-gray-200 flex items-center gap-4"><img src={id.imageUrl} alt="Item" className="w-16 h-16 object-cover rounded-lg border border-gray-200" onError={e => { e.target.onerror = null; e.target.src = "https://placehold.co/200x200/eeeeee/999999?text=No+Image&font=montserrat"; }} /><div><p className="text-xs font-bold uppercase tracking-wider text-gray-400 mb-0.5">Item Image</p><p className="text-xs text-indigo-500 font-medium truncate max-w-[200px]">{id.imageUrl}</p></div></div>)}
+//           <div className="bg-gray-50 rounded-xl p-4 border border-gray-200"><p className="text-xs font-bold uppercase tracking-wider text-gray-400 mb-3 flex items-center gap-1.5"><FaBoxOpen className="text-indigo-400" /> Basic Info</p><RRow l="Code" v={id.itemCode} /><RRow l="Name" v={id.itemName} /><RRow l="Category" v={id.category} /><RRow l="Type" v={id.itemType} /><RRow l="Unit Price" v={id.unitPrice ? `₹${Number(id.unitPrice).toFixed(2)}` : ""} /><RRow l="Min. Stock" v={id.quantity} /><RRow l="UOM" v={id.uom} /><RRow l="Reorder Level" v={id.reorderLevel} /><RRow l="Lead Time" v={id.leadTime ? `${id.leadTime} days` : ""} /><RRow l="Status" v={id.status} /></div>
+//           <div className="bg-gray-50 rounded-xl p-4 border border-gray-200"><p className="text-xs font-bold uppercase tracking-wider text-gray-400 mb-3 flex items-center gap-1.5"><HiOutlineDocumentText className="text-indigo-400" /> Tax</p><RRow l="Include GST" v={id.includeGST ? "Yes" : "No"} /><RRow l="GST Rate" v={id.gstRate ? `${id.gstRate}%` : ""} /><RRow l="Include IGST" v={id.includeIGST ? "Yes" : "No"} /><RRow l="IGST Rate" v={id.igstRate ? `${id.igstRate}%` : ""} /></div>
+//           {(id.variants || []).length > 0 && (<div className="bg-gray-50 rounded-xl p-4 border border-gray-200"><p className="text-xs font-bold uppercase tracking-wider text-gray-400 mb-3 flex items-center gap-1.5"><FaListUl className="text-amber-500" /> Variants ({id.variants.length})</p>{id.variants.map((v, i) => (<div key={i} className="text-xs py-1">SKU: {v.sku || "—"} · Price: {v.price ? `₹${v.price}` : "default"} · Stock: {v.quantity || 0}</div>))}</div>)}
+//           {id.posEnabled && (<div className="bg-gray-50 rounded-xl p-4 border border-gray-200"><p className="text-xs font-bold uppercase tracking-wider text-gray-400 mb-3 flex items-center gap-1.5"><FaCashRegister className="text-orange-400" /> POS</p><RRow l="POS Price" v={id.posConfig?.posPrice ? `₹${id.posConfig.posPrice}` : `₹${id.unitPrice} (unit price)`} /><RRow l="Barcode" v={id.posConfig?.barcode} /><RRow l="Discount" v={id.posConfig?.allowDiscount ? `Allowed (max ${id.posConfig.maxDiscountPercent}%)` : "Not allowed"} /><RRow l="Taxable" v={id.posConfig?.taxableInPOS ? "Yes" : "No"} /></div>)}
+//           {id.includeQualityCheck && id.qualityCheckDetails?.length > 0 && (<div className="bg-gray-50 rounded-xl p-4 border border-gray-200"><p className="text-xs font-bold uppercase tracking-wider text-gray-400 mb-3 flex items-center gap-1.5"><FaShieldAlt className="text-emerald-400" /> Quality ({id.qualityCheckDetails.length} parameters)</p>{id.qualityCheckDetails.map((q, i) => <RRow key={i} l={q.parameter||`Param ${i+1}`} v={`Min: ${q.min||"—"} · Max: ${q.max||"—"}`} />)}</div>)}
+//           {(id.length || id.weight || id.manufacturer) && (<div className="bg-gray-50 rounded-xl p-4 border border-gray-200"><p className="text-xs font-bold uppercase tracking-wider text-gray-400 mb-3 flex items-center gap-1.5"><FaRuler className="text-blue-400" /> Dimensions</p>{id.length && <RRow l="L × W × H" v={`${id.length} × ${id.width||0} × ${id.height||0} cm`} />}{id.weight && <RRow l="Weight" v={`${id.weight} kg`} />}{id.manufacturer && <RRow l="Manufacturer" v={id.manufacturer} />}</div>)}
+//         </div>
+//       );
+
+//       default: return null;
+//     }
+//   };
+
+//   // LIST VIEW (unchanged except maybe variant count column)
+//   if (view === "list") return (
+//     <div className="min-h-screen bg-gray-50">
+//       {showScanner && <QRScannerModal onScanSuccess={handleScanSuccess} onManual={handleManualEntry} onClose={() => setShowScanner(false)} />}
+//           {viewModalOpen && <ViewItemModal item={viewItem} onClose={() => setViewModalOpen(false)} />}
+//       <div className="max-w-screen-xl mx-auto px-4 sm:px-6 py-6">
+//         <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
+//           <div><h1 className="text-2xl font-extrabold tracking-tight text-gray-900">Item Management</h1><p className="text-sm text-gray-400 mt-0.5">{stats.total} total items</p></div>
+//           <div className="flex flex-wrap gap-2">
+//             <button onClick={downloadTemplate} className="flex items-center gap-2 px-3.5 py-2 rounded-lg bg-gray-900 text-white text-sm font-semibold hover:bg-gray-700 transition-all"><FaDownload className="text-xs" /> Template</button>
+//             <label className="flex items-center gap-2 px-3.5 py-2 rounded-lg bg-violet-600 text-white text-sm font-semibold hover:bg-violet-700 cursor-pointer transition-all">{uploading ? "Uploading…" : <><FaFileUpload className="text-xs" /> Bulk Upload</>}<input type="file" hidden accept=".csv" onChange={handleBulk} /></label>
+//             <button onClick={handleCreateClick} className="flex items-center gap-2 px-3.5 py-2 rounded-lg bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 transition-all shadow-sm shadow-indigo-200"><FaPlus className="text-xs" /> Create Item</button>
+//           </div>
+//         </div>
+//         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
+//           {[{ label:"Total", value:stats.total, emoji:"📦", filter:"All" },{ label:"Product", value:stats.product, emoji:"🛍️", filter:"Product" },{ label:"Service", value:stats.service, emoji:"🔧", filter:"Service" },{ label:"Raw Material", value:stats.rawMat, emoji:"⚙️", filter:"Raw Material" }].map(s => (
+//             <div key={s.label} onClick={() => { setFilterType(s.filter); setCurrentPage(1); }} className={`bg-white rounded-2xl p-4 flex items-center gap-3 cursor-pointer border-2 transition-all ${filterType===s.filter ? "border-indigo-400 shadow-md shadow-indigo-100" : "border-transparent shadow-sm hover:border-indigo-200 hover:-translate-y-0.5"}`}>
+//               <span className="text-2xl">{s.emoji}</span>
+//               <div><p className="text-[10.5px] font-bold uppercase tracking-widest text-gray-400">{s.label}</p><p className="text-2xl font-extrabold tracking-tight text-gray-900 leading-none mt-0.5">{s.value}</p></div>
+//             </div>
+//           ))}
+//         </div>
+//         <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
+//           <div className="flex flex-wrap items-center gap-3 px-5 py-4 border-b border-gray-100">
+//             <div className="relative flex-1 min-w-[180px] max-w-xs"><FaSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-300 text-xs pointer-events-none" /><input className="w-full pl-8 pr-3 py-2 rounded-lg border border-gray-200 bg-gray-50 text-sm focus:outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 focus:bg-white transition-all placeholder:text-gray-300" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="Search items…" /></div>
+//             <div className="flex gap-2 flex-wrap ml-auto">{["All","Product","Service","Raw Material"].map(t => <button key={t} onClick={() => { setFilterType(t); setCurrentPage(1); }} className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-all ${filterType===t ? "bg-indigo-600 text-white border-indigo-600" : "bg-gray-50 text-gray-500 border-gray-200 hover:border-indigo-300 hover:text-indigo-500"}`}>{t}</button>)}</div>
+//           </div>
+//           <div className="overflow-x-auto">
+//             <table className="w-full text-sm border-collapse">
+//               <thead><tr className="bg-gray-50 border-b border-gray-100">{["Image","Code","Item","Category","Type","Price","UOM","Status","Variants","POS","Actions"].map(h => <th key={h} className="px-4 py-3 text-left text-[10.5px] font-bold uppercase tracking-wider text-gray-400 whitespace-nowrap">{h}</th>)}</tr></thead>
+//               <tbody>
+//                 {loading ? Array(5).fill(0).map((_, i) => <tr key={i} className="border-b border-gray-50">{Array(11).fill(0).map((__, j) => <td key={j} className="px-4 py-3"><div className="h-3.5 rounded bg-gradient-to-r from-gray-100 via-gray-200 to-gray-100 bg-[length:400%_100%] animate-[shimmer_1.4s_infinite]" /></td>)}</tr>) : items.length === 0 ? <tr><td colSpan={11} className="text-center py-16"><div className="text-4xl mb-2 opacity-20">📦</div><p className="text-sm font-medium text-gray-300">No items found</p></td></tr> : items.map(it => (
+//                   <tr key={it._id} className="border-b border-gray-50 hover:bg-indigo-50/30 transition-colors">
+//                     <td className="px-1 py-1.5">{it.imageUrl ? <img src={it.imageUrl} alt={it.itemName} className="w-12 h-12 object-cover rounded-md border border-gray-200" onError={e => { e.target.onerror = null; e.target.src = "https://placehold.co/800x800/eeeeee/999999?text=No+Image&font=montserrat"; }} /> : <div className="w-12 h-12 rounded-md border border-dashed border-gray-200 bg-gray-50 flex items-center justify-center"><FaBoxOpen className="text-gray-300 text-base" /></div>}</td>
+//                     <td className="px-4 py-3"><span className="font-mono text-[11px] font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded">{it.itemCode}</span></td>
+//                     <td className="px-4 py-3"><p className="font-semibold text-gray-900 text-sm leading-tight">{it.itemName}</p>{it.manufacturer && <p className="text-xs text-gray-400">{it.manufacturer}</p>}</td>
+//                     <td className="px-4 py-3 text-xs text-gray-500 font-medium">{it.category || <span className="text-gray-200">—</span>}</td>
+//                     <td className="px-4 py-3"><span className={`text-[10.5px] font-semibold px-2 py-0.5 rounded-full ${it.itemType==="Product" ? "bg-blue-50 text-blue-600" : it.itemType==="Service" ? "bg-purple-50 text-purple-600" : it.itemType==="Raw Material" ? "bg-amber-50 text-amber-600" : "bg-gray-100 text-gray-500"}`}>{it.itemType || "—"}</span></td>
+//                     <td className="px-4 py-3 font-mono text-sm font-bold text-gray-700">₹{Number(it.unitPrice||0).toFixed(2)}</td>
+//                     <td className="px-4 py-3 text-xs text-gray-500">{it.uom || <span className="text-gray-200">—</span>}</td>
+//                     <td className="px-4 py-3"><span className={`text-[10.5px] font-semibold px-2 py-0.5 rounded-full ${it.status==="active" ? "bg-emerald-50 text-emerald-600" : "bg-red-50 text-red-500"}`}>{it.status}</span></td>
+//                     <td className="px-4 py-3 text-center">{it.variants?.length > 0 ? <span className="bg-amber-100 text-amber-700 text-[10px] font-bold px-1.5 py-0.5 rounded">{it.variants.length}</span> : <span className="text-gray-200">—</span>}</td>
+//                     <td className="px-4 py-3">{it.posEnabled ? <span className="text-[10.5px] font-semibold px-2 py-0.5 rounded-full bg-orange-50 text-orange-500">POS</span> : <span className="text-gray-200 text-xs">—</span>}</td>
+//                     <td className="px-4 py-3"><div className="flex gap-1.5">
+//                       <button onClick={() => handleView(it._id)} className="w-7 h-7 rounded-lg bg-green-50 text-green-500 hover:bg-green-500 hover:text-white flex items-center justify-center"><FaEye className="text-xs" /></button>  
+//                       <button onClick={() => handleEdit(it)} className="w-7 h-7 rounded-lg bg-indigo-50 text-indigo-500 hover:bg-indigo-500 hover:text-white flex items-center justify-center"><FaEdit className="text-xs" /></button>
+//                       <button onClick={() => handleDelete(it._id)} className="w-7 h-7 rounded-lg bg-red-50 text-red-400 hover:bg-red-500 hover:text-white flex items-center justify-center"><FaTrash className="text-xs" /></button>
+//                       </div>
+//                     </td>
+//                   </tr>
+//                 ))}
+//               </tbody>
+//             </table>
+//           </div>
+//           <div className="px-5 py-4 border-t flex items-center justify-between">
+//             <button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1} className="px-3 py-1 rounded-md bg-gray-100 text-gray-600 disabled:opacity-50 text-sm font-medium hover:bg-gray-200"><FaChevronLeft className="inline mr-1 text-xs" /> Prev</button>
+//             <span className="text-sm text-gray-500">Page {currentPage} of {totalPages}</span>
+//             <button onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages} className="px-3 py-1 rounded-md bg-gray-100 text-gray-600 disabled:opacity-50 text-sm font-medium hover:bg-gray-200">Next <FaChevronRight className="inline ml-1 text-xs" /></button>
+//           </div>
+//         </div>
+//       </div>
+//       <style>{`@keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}`}</style>
+//     </div>
+//   );
+
+//   // FORM VIEW
+//   return (
+//     <div className="min-h-screen bg-gray-50">
+//       {showScanner && <QRScannerModal onScanSuccess={handleScanSuccess} onManual={handleManualEntry} onClose={() => setShowScanner(false)} />}
+//       <div className="max-w-screen-md mx-auto px-4 sm:px-6 py-6">
+//         <button onClick={reset} className="flex items-center gap-2 text-sm font-semibold text-gray-500 hover:text-gray-800 mb-5"><FaArrowLeft className="text-xs" /> Back to Items</button>
+//         <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
+//           <div className="px-6 pt-6 pb-0">
+//             <div className="flex items-center gap-0 mb-6 overflow-x-auto pb-2">
+//               {STEPS.map((s, idx) => {
+//                 const done = step > s.id, current = step === s.id;
+//                 const Icon = s.icon;
+//                 return (
+//                   <React.Fragment key={s.id}>
+//                     <div className="flex flex-col items-center gap-1 shrink-0">
+//                       <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all ${done ? "bg-emerald-500 text-white" : current ? "bg-indigo-600 text-white ring-4 ring-indigo-100" : "bg-gray-100 text-gray-300"}`}>{done ? <FaCheck className="text-[10px]" /> : <Icon className="text-[10px]" />}</div>
+//                       <span className={`text-[9px] font-bold uppercase tracking-wider hidden sm:block ${current ? "text-indigo-600" : done ? "text-emerald-500" : "text-gray-300"}`}>{s.label}</span>
+//                     </div>
+//                     {idx < STEPS.length - 1 && <div className={`flex-1 h-0.5 mx-1 transition-all ${step > s.id ? "bg-emerald-400" : "bg-gray-100"}`} />}
+//                   </React.Fragment>
+//                 );
+//               })}
+//             </div>
+//           </div>
+//           <div className="px-6 pb-4 border-b border-gray-100"><h2 className="text-base font-extrabold text-gray-900">{STEPS[step-1].label}</h2><p className="text-xs text-gray-400 mt-0.5">Step {step} of {STEPS.length}</p></div>
+//           <div className="px-6 py-5">{renderStep()}</div>
+//           <div className="px-6 py-4 border-t border-gray-100 flex justify-between gap-3">
+//             <button onClick={goPrev} disabled={step === 1} className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-gray-200 text-gray-500 text-sm font-semibold disabled:opacity-30 hover:bg-gray-50"><FaChevronLeft className="text-xs" /> Back</button>
+//             {step < STEPS.length ? <button onClick={goNext} className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700">Next <FaChevronRight className="text-xs" /></button> : <button onClick={handleSubmit} disabled={submitting} className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-emerald-600 text-white text-sm font-bold hover:bg-emerald-700 disabled:opacity-60">{submitting ? <FaSpinner className="animate-spin" /> : <FaCheck />}{submitting ? "Saving…" : id._id ? "Update Item" : "Save Item"}</button>}
+//           </div>
+//         </div>
+//       </div>
+//     </div>
+//   );
+// }
 
 
 

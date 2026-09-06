@@ -8,6 +8,7 @@ import CustomerSearch from "@/components/CustomerSearch";
 import CustomerAddressSelector from "@/components/CustomerAddressSelector";
 import { toast, ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
+import ProtectedPage from "@/components/ProtectedPage";
 import { jwtDecode } from "jwt-decode";
 import {
   FaArrowLeft, FaCheck, FaUser, FaCalendarAlt,
@@ -148,9 +149,12 @@ function getVariantImageUrl(item, variantSku) {
 
 export default function DeliveryPage() {
   return (
+    <ProtectedPage module="Delivery" action="create">
+
     <Suspense fallback={<div className="flex items-center justify-center min-h-screen text-gray-400">Loading Delivery Form...</div>}>
       <DeliveryForm />
     </Suspense>
+    </ProtectedPage>
   );
 }
 

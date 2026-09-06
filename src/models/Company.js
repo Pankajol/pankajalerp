@@ -73,6 +73,13 @@ const CompanySchema = new mongoose.Schema(
       required: true,
       select: false, // never returned in queries
     },
+    // ─── Add this inside the schema ────────────────────────────
+parentCompany: {
+  type: mongoose.Schema.Types.ObjectId,
+  ref: "Company",
+  default: null,
+  index: true,
+},
     agreeToTerms: { type: Boolean, required: true, default: false },
 
     // Business info
@@ -144,6 +151,11 @@ const CompanySchema = new mongoose.Schema(
       enum: ["erp", "society", "healthcare", "education", "retail", "election"],
       default: "erp",
     },
+    subType: {
+  type: String,
+  enum: ["school", "college", "university", "institute", null],
+  default: null,
+},
     erpModules: { type: String, trim: true },
     employeeCount: { type: Number },
     societyRegNo: { type: String, trim: true },

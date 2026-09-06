@@ -3,6 +3,9 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import axios from "axios";
+import { useAuth } from "@/context/AuthContext";
+
+import ProtectedPage from "@/components/ProtectedPage";
 import { toast } from "react-toastify";
 import { 
   Eye, Pencil, Send, BarChart3, Trash2, 
@@ -28,6 +31,7 @@ const InsightCard = ({ title, value, icon: Icon, color }) => (
 
 export default function UltimateCampaignsDashboard() {
   const router = useRouter();
+  const { can } = useAuth();
   
   // Core States
   const [campaigns, setCampaigns] = useState([]);
@@ -101,6 +105,7 @@ export default function UltimateCampaignsDashboard() {
   }, [campaigns, search, statusFilter]);
 
   return (
+    <ProtectedPage module="Campaign" permission="view">
     <div className="min-h-screen bg-[#fcfcfd] p-6 lg:p-12 text-slate-900">
       <div className="max-w-7xl mx-auto space-y-10">
         
@@ -112,13 +117,17 @@ export default function UltimateCampaignsDashboard() {
             </div>
             <h1 className="text-5xl font-black tracking-tight text-slate-900">Campaigns<span className="text-indigo-600">.</span></h1>
           </div>
-          <button
-            onClick={() => router.push("/admin/crm/campaign/new")}
-            className="group relative h-14 px-8 bg-slate-900 text-white rounded-2xl font-bold transition-all hover:bg-indigo-600 active:scale-95 flex items-center gap-3 overflow-hidden"
-          >
-            <Plus size={20} strokeWidth={3} />
-            <span>New Campaign</span>
-          </button>
+          <div className="flex gap-3">
+            {can("Campaign", "create") && (
+              <button 
+                onClick={() => router.push("/admin/crm/campaign/new")}
+                className="group relative h-14 px-8 bg-slate-900 text-white rounded-2xl font-bold transition-all hover:bg-indigo-600 active:scale-95 flex items-center gap-3 overflow-hidden"
+              >
+                <Plus size={20} strokeWidth={3} />
+                <span>New Campaign</span>
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Dynamic Analytics Overview */}
@@ -248,6 +257,7 @@ export default function UltimateCampaignsDashboard() {
         </div>
       </div>
     </div>
+    </ProtectedPage>
   );
 }
 

@@ -14,7 +14,7 @@ import pLimit from "p-limit"; // 👈 concurrency control
 // -------------------------
 // CONFIGS
 // -------------------------
-const BASE_URL = (process.env.NEXT_PUBLIC_BASE_URL || process.env.BASE_URL || "").replace(/\/$/, "");
+const BASE_URL = (process.env.BASE_URL);
 if (!BASE_URL) throw new Error("BASE_URL not defined");
 
 // How many emails to send concurrently
@@ -231,7 +231,18 @@ export async function POST(req, context) {
             downloadLinksHtml = `<div style="margin: 20px 0;">${links.join("<br/>")}</div>`;
           }
 
-          const openPixel = `<img src="${BASE_URL}/api/track/email-open?id=${log._id}" width="1" height="1" style="display:none;" />`;
+          // const openPixel = `<img src="${BASE_URL}/api/track/email-open?id=${log._id}" width="1" height="1" style="display:none;" />`;
+          const openPixel = `
+  <img
+    src="${BASE_URL}/api/track/email-open?id=${log._id}&t=${Date.now()}"
+    width="1"
+    height="1"
+    alt=""
+    style="display:block;width:1px;height:1px;border:0;opacity:0;"
+  />
+`;
+
+console.log("📧 TRACKING PIXEL:", openPixel);
 
           const finalHtml = `
             <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">

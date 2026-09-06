@@ -8,9 +8,9 @@ function Toast({ toasts }) {
     <div style={{ position: "fixed", top: 24, right: 24, zIndex: 9999, display: "flex", flexDirection: "column", gap: 10 }}>
       {toasts.map(t => (
         <div key={t.id} style={{
-          background: t.type === "success" ? "#0a1628" : "#1a0a0a",
+          background: t.type === "success" ? "#f0fdf4" : "#fef2f2",
           border: `1px solid ${t.type === "success" ? "#22c55e55" : "#ef444455"}`,
-          color: t.type === "success" ? "#22c55e" : "#ef4444",
+          color: t.type === "success" ? "#166534" : "#991b1b",
           padding: "12px 20px", borderRadius: 12, fontSize: 13,
           fontFamily: "'DM Mono', monospace",
           boxShadow: `0 8px 32px ${t.type === "success" ? "#22c55e22" : "#ef444422"}`,
@@ -46,7 +46,7 @@ function Ring({ pct, color, size = 100, stroke = 8 }) {
   const offset = circ - (Math.min(pct, 100) / 100) * circ;
   return (
     <svg width={size} height={size} style={{ transform: "rotate(-90deg)", flexShrink: 0 }}>
-      <circle cx={size/2} cy={size/2} r={r} fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth={stroke} />
+      <circle cx={size/2} cy={size/2} r={r} fill="none" stroke="#e2e8f0" strokeWidth={stroke} />
       <circle cx={size/2} cy={size/2} r={r} fill="none" stroke={color} strokeWidth={stroke}
         strokeDasharray={circ} strokeDashoffset={offset} strokeLinecap="round"
         style={{ transition: "stroke-dashoffset 1s cubic-bezier(0.4,0,0.2,1)" }} />
@@ -58,15 +58,16 @@ function Ring({ pct, color, size = 100, stroke = 8 }) {
 function SummaryCard({ label, value, icon, color, sub, delay }) {
   return (
     <div style={{
-      background: "#0d1829", border: "1px solid rgba(255,255,255,0.07)",
+      background: "#ffffff", border: "1px solid rgba(0,0,0,0.06)",
       borderRadius: 16, padding: "20px",
+      boxShadow: "0 2px 8px rgba(0,0,0,0.02)",
       animation: `sl-fadeUp 0.5s ease ${delay}s both`,
     }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
         <div>
-          <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, color: "#475569", textTransform: "uppercase", letterSpacing: 2, marginBottom: 8 }}>{label}</div>
-          <div style={{ fontFamily: "'Syne', sans-serif", fontSize: 26, fontWeight: 800, color: "#f1f5f9", lineHeight: 1 }}>{value}</div>
-          {sub && <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, color: "#334155", marginTop: 6 }}>{sub}</div>}
+          <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, color: "#5e6f8d", textTransform: "uppercase", letterSpacing: 2, marginBottom: 8 }}>{label}</div>
+          <div style={{ fontFamily: "'Syne', sans-serif", fontSize: 26, fontWeight: 800, color: "#0b1a2a", lineHeight: 1 }}>{value}</div>
+          {sub && <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, color: "#7a8aa3", marginTop: 6 }}>{sub}</div>}
         </div>
         <div style={{ width: 42, height: 42, borderRadius: 11, background: `${color}18`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, color, flexShrink: 0 }}>{icon}</div>
       </div>
@@ -80,10 +81,10 @@ function BreakdownBar({ label, amount, total, color, delay }) {
   return (
     <div style={{ animation: `sl-fadeUp 0.4s ease ${delay}s both` }}>
       <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
-        <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 12, color: "#94a3b8" }}>{label}</span>
+        <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 12, color: "#2c3e50" }}>{label}</span>
         <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 12, color, fontWeight: 500 }}>{fmtINR(amount)}</span>
       </div>
-      <div style={{ height: 4, background: "rgba(255,255,255,0.05)", borderRadius: 99 }}>
+      <div style={{ height: 4, background: "#e9edf4", borderRadius: 99 }}>
         <div style={{ height: "100%", width: `${pct}%`, background: color, borderRadius: 99, transition: "width 1s cubic-bezier(0.4,0,0.2,1)" }} />
       </div>
     </div>
@@ -102,28 +103,28 @@ function SlipRow({ slip, index, onSelect, isActive }) {
   return (
     <tr onClick={() => onSelect(slip)}
       style={{
-        borderBottom: "1px solid rgba(255,255,255,0.04)", cursor: "pointer",
+        borderBottom: "1px solid rgba(0,0,0,0.04)", cursor: "pointer",
         background: isActive ? "rgba(59,130,246,0.06)" : "transparent",
         transition: "background 0.15s",
         animation: `sl-fadeUp 0.4s ease ${index * 0.04}s both`,
       }}
-      onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = "rgba(255,255,255,0.025)"; }}
+      onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = "rgba(0,0,0,0.02)"; }}
       onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = "transparent"; }}
     >
       <td style={{ padding: "14px 20px" }}>
-        <div style={{ fontFamily: "'Syne', sans-serif", fontWeight: 600, fontSize: 14, color: "#e2e8f0" }}>{monthLabel(slip)}</div>
+        <div style={{ fontFamily: "'Syne', sans-serif", fontWeight: 600, fontSize: 14, color: "#0b1a2a" }}>{monthLabel(slip)}</div>
         {slip.presentDays != null && (
-          <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, color: "#475569", marginTop: 2 }}>{slip.presentDays} days worked</div>
+          <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, color: "#7a8aa3", marginTop: 2 }}>{slip.presentDays} days worked</div>
         )}
       </td>
-      <td style={{ padding: "14px 12px", fontFamily: "'DM Mono', monospace", fontSize: 13, color: "#94a3b8" }}>
+      <td style={{ padding: "14px 12px", fontFamily: "'DM Mono', monospace", fontSize: 13, color: "#2c3e50" }}>
         {fmtINR(slip.grossPay || slip.basicSalary)}
       </td>
-      <td style={{ padding: "14px 12px", fontFamily: "'DM Mono', monospace", fontSize: 13, color: "#ef4444" }}>
+      <td style={{ padding: "14px 12px", fontFamily: "'DM Mono', monospace", fontSize: 13, color: "#c0392b" }}>
         -{fmtINR(slip.totalDeductions)}
       </td>
       <td style={{ padding: "14px 12px" }}>
-        <span style={{ fontFamily: "'Syne', sans-serif", fontWeight: 700, fontSize: 14, color: "#22c55e" }}>
+        <span style={{ fontFamily: "'Syne', sans-serif", fontWeight: 700, fontSize: 14, color: "#16a34a" }}>
           {fmtINR(slip.netPay)}
         </span>
       </td>
@@ -132,7 +133,7 @@ function SlipRow({ slip, index, onSelect, isActive }) {
           {statusCfg.icon} {status}
         </span>
       </td>
-      <td style={{ padding: "14px 16px", color: "#334155", fontSize: 12 }}>
+      <td style={{ padding: "14px 16px", color: "#7a8aa3", fontSize: 12 }}>
         {isActive ? "▲" : "▶"}
       </td>
     </tr>
@@ -166,30 +167,30 @@ function PayslipPanel({ slip, onClose, onDownload }) {
 
   return (
     <>
-      <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)", zIndex: 100 }} />
+      <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.3)", backdropFilter: "blur(4px)", zIndex: 100 }} />
       <div style={{
         position: "fixed", top: 0, right: 0, bottom: 0, width: "min(480px, 95vw)",
-        background: "#0a0f1e", borderLeft: "1px solid rgba(255,255,255,0.08)",
+        background: "#ffffff", borderLeft: "1px solid rgba(0,0,0,0.08)",
         zIndex: 101, overflowY: "auto", padding: "28px 24px",
         animation: "sl-slideIn 0.35s cubic-bezier(0.4,0,0.2,1)",
-        boxShadow: "-20px 0 60px rgba(0,0,0,0.5)",
+        boxShadow: "-20px 0 60px rgba(0,0,0,0.1)",
       }}>
         {/* Header */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 24 }}>
           <div>
-            <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, color: "#475569", textTransform: "uppercase", letterSpacing: 2 }}>Payslip</div>
-            <h2 style={{ fontFamily: "'Syne', sans-serif", fontSize: 22, fontWeight: 800, color: "#f1f5f9", margin: "4px 0 0" }}>{monthLabel(slip)}</h2>
+            <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, color: "#5e6f8d", textTransform: "uppercase", letterSpacing: 2 }}>Payslip</div>
+            <h2 style={{ fontFamily: "'Syne', sans-serif", fontSize: 22, fontWeight: 800, color: "#0b1a2a", margin: "4px 0 0" }}>{monthLabel(slip)}</h2>
           </div>
           <div style={{ display: "flex", gap: 8 }}>
-            <button onClick={onDownload} style={{ background: "rgba(59,130,246,0.1)", border: "1px solid rgba(59,130,246,0.25)", color: "#38bdf8", padding: "8px 14px", borderRadius: 10, cursor: "pointer", fontFamily: "'DM Mono', monospace", fontSize: 12, display: "flex", alignItems: "center", gap: 6 }}>
+            <button onClick={onDownload} style={{ background: "#eef4fa", border: "1px solid #d0dcec", color: "#1f3a5f", padding: "8px 14px", borderRadius: 10, cursor: "pointer", fontFamily: "'DM Mono', monospace", fontSize: 12, display: "flex", alignItems: "center", gap: 6 }}>
               ↓ Download
             </button>
-            <button onClick={onClose} style={{ background: "rgba(255,255,255,0.06)", border: "none", color: "#94a3b8", width: 34, height: 34, borderRadius: 10, cursor: "pointer" }}>✕</button>
+            <button onClick={onClose} style={{ background: "transparent", border: "none", color: "#7a8aa3", width: 34, height: 34, borderRadius: 10, cursor: "pointer" }}>✕</button>
           </div>
         </div>
 
         {/* Net pay ring */}
-        <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 16, padding: "20px", marginBottom: 20, display: "flex", alignItems: "center", gap: 20 }}>
+        <div style={{ background: "#f8faff", border: "1px solid rgba(0,0,0,0.04)", borderRadius: 16, padding: "20px", marginBottom: 20, display: "flex", alignItems: "center", gap: 20 }}>
           <div style={{ position: "relative" }}>
             <Ring pct={netPct} color="#22c55e" size={90} stroke={7} />
             <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
@@ -197,19 +198,19 @@ function PayslipPanel({ slip, onClose, onDownload }) {
             </div>
           </div>
           <div style={{ flex: 1 }}>
-            <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, color: "#475569", textTransform: "uppercase", letterSpacing: 2 }}>Net Take Home</div>
+            <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, color: "#5e6f8d", textTransform: "uppercase", letterSpacing: 2 }}>Net Take Home</div>
             <div style={{ fontFamily: "'Syne', sans-serif", fontSize: 28, fontWeight: 800, color: "#22c55e", margin: "4px 0" }}>{fmtINR(slip.netPay)}</div>
-            <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, color: "#334155" }}>Gross: {fmtINR(grossPay)} · Deductions: {fmtINR(totalDed)}</div>
+            <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, color: "#7a8aa3" }}>Gross: {fmtINR(grossPay)} · Deductions: {fmtINR(totalDed)}</div>
           </div>
         </div>
 
         {/* Attendance */}
         {(slip.presentDays != null || slip.totalDays != null) && (
-          <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 14, padding: "14px 18px", marginBottom: 18, display: "flex", gap: 24 }}>
+          <div style={{ background: "#f8faff", border: "1px solid rgba(0,0,0,0.04)", borderRadius: 14, padding: "14px 18px", marginBottom: 18, display: "flex", gap: 24 }}>
             {[["Working Days", slip.totalDays, "#475569"],["Present", slip.presentDays, "#22c55e"],["Absent", (slip.totalDays - slip.presentDays) || 0, "#ef4444"],["LOP Days", slip.lopDays || 0, "#f59e0b"]].map(([l, v, c]) => v != null && (
               <div key={l} style={{ textAlign: "center" }}>
                 <div style={{ fontFamily: "'Syne', sans-serif", fontSize: 20, fontWeight: 800, color: c }}>{v}</div>
-                <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, color: "#334155", marginTop: 2 }}>{l}</div>
+                <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, color: "#7a8aa3", marginTop: 2 }}>{l}</div>
               </div>
             ))}
           </div>
@@ -218,13 +219,13 @@ function PayslipPanel({ slip, onClose, onDownload }) {
         {/* Earnings */}
         {earnings.length > 0 && (
           <div style={{ marginBottom: 20 }}>
-            <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, color: "#475569", textTransform: "uppercase", letterSpacing: 2, marginBottom: 14 }}>Earnings</div>
+            <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, color: "#5e6f8d", textTransform: "uppercase", letterSpacing: 2, marginBottom: 14 }}>Earnings</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
               {earnings.map((e, i) => <BreakdownBar key={e.label} label={e.label} amount={e.amount} total={grossPay} color={e.color} delay={i * 0.04} />)}
             </div>
-            <div style={{ marginTop: 14, paddingTop: 12, borderTop: "1px solid rgba(255,255,255,0.06)", display: "flex", justifyContent: "space-between" }}>
-              <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 12, color: "#64748b" }}>Total Earnings</span>
-              <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 13, color: "#f1f5f9", fontWeight: 500 }}>{fmtINR(grossPay)}</span>
+            <div style={{ marginTop: 14, paddingTop: 12, borderTop: "1px solid rgba(0,0,0,0.06)", display: "flex", justifyContent: "space-between" }}>
+              <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 12, color: "#5e6f8d" }}>Total Earnings</span>
+              <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 13, color: "#0b1a2a", fontWeight: 500 }}>{fmtINR(grossPay)}</span>
             </div>
           </div>
         )}
@@ -232,27 +233,27 @@ function PayslipPanel({ slip, onClose, onDownload }) {
         {/* Deductions */}
         {deductions.length > 0 && (
           <div style={{ marginBottom: 20 }}>
-            <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, color: "#475569", textTransform: "uppercase", letterSpacing: 2, marginBottom: 14 }}>Deductions</div>
+            <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, color: "#5e6f8d", textTransform: "uppercase", letterSpacing: 2, marginBottom: 14 }}>Deductions</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
               {deductions.map((d, i) => <BreakdownBar key={d.label} label={d.label} amount={d.amount} total={grossPay} color={d.color} delay={i * 0.04} />)}
             </div>
-            <div style={{ marginTop: 14, paddingTop: 12, borderTop: "1px solid rgba(255,255,255,0.06)", display: "flex", justifyContent: "space-between" }}>
-              <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 12, color: "#64748b" }}>Total Deductions</span>
-              <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 13, color: "#ef4444", fontWeight: 500 }}>-{fmtINR(totalDed)}</span>
+            <div style={{ marginTop: 14, paddingTop: 12, borderTop: "1px solid rgba(0,0,0,0.06)", display: "flex", justifyContent: "space-between" }}>
+              <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 12, color: "#5e6f8d" }}>Total Deductions</span>
+              <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 13, color: "#c0392b", fontWeight: 500 }}>-{fmtINR(totalDed)}</span>
             </div>
           </div>
         )}
 
         {/* Net pay line */}
-        <div style={{ background: "rgba(34,197,94,0.06)", border: "1px solid rgba(34,197,94,0.2)", borderRadius: 12, padding: "16px 18px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <span style={{ fontFamily: "'Syne', sans-serif", fontWeight: 700, fontSize: 15, color: "#f1f5f9" }}>Net Pay</span>
+        <div style={{ background: "rgba(34,197,94,0.06)", border: "1px solid #22c55e33", borderRadius: 12, padding: "16px 18px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <span style={{ fontFamily: "'Syne', sans-serif", fontWeight: 700, fontSize: 15, color: "#0b1a2a" }}>Net Pay</span>
           <span style={{ fontFamily: "'Syne', sans-serif", fontWeight: 800, fontSize: 22, color: "#22c55e" }}>{fmtINR(slip.netPay)}</span>
         </div>
 
         {slip.remarks && (
-          <div style={{ marginTop: 16, padding: "12px 16px", background: "rgba(245,158,11,0.06)", border: "1px solid rgba(245,158,11,0.2)", borderRadius: 10 }}>
+          <div style={{ marginTop: 16, padding: "12px 16px", background: "#fef9e7", border: "1px solid #f59e0b44", borderRadius: 10 }}>
             <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, color: "#f59e0b", marginBottom: 4 }}>REMARKS</div>
-            <div style={{ fontSize: 13, color: "#fbbf24" }}>{slip.remarks}</div>
+            <div style={{ fontSize: 13, color: "#b45309" }}>{slip.remarks}</div>
           </div>
         )}
       </div>
@@ -349,8 +350,8 @@ export default function MySalaryPage() {
         @keyframes sl-fadeUp  { from{opacity:0;transform:translateY(20px)} to{opacity:1;transform:translateY(0)} }
         @keyframes sl-shimmer { 0%{background-position:-400px 0} 100%{background-position:400px 0} }
         .sl-page * { box-sizing:border-box; }
-        .sl-page { min-height:100vh; background:#060b14; font-family:'Syne',sans-serif; color:#e2e8f0; padding:32px 20px 60px; }
-        .sl-skeleton { background:linear-gradient(90deg,#1e293b 25%,#2d3f55 50%,#1e293b 75%); background-size:400px 100%; animation:sl-shimmer 1.4s infinite; border-radius:8px; }
+        .sl-page { min-height:100vh; background:#f2f6fc; font-family:'Syne',sans-serif; color:#0b1a2a; padding:32px 20px 60px; }
+        .sl-skeleton { background:linear-gradient(90deg,#dce3ed 25%,#eef4fa 50%,#dce3ed 75%); background-size:400px 100%; animation:sl-shimmer 1.4s infinite; border-radius:8px; }
         table { border-collapse:collapse; width:100%; }
       `}</style>
 
@@ -362,9 +363,9 @@ export default function MySalaryPage() {
 
           {/* ── Header ── */}
           <div style={{ marginBottom: 32, animation: "sl-fadeUp 0.4s ease" }}>
-            <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, color: "#475569", textTransform: "uppercase", letterSpacing: 2, marginBottom: 4 }}>HR Portal</div>
-            <h1 style={{ fontSize: 32, fontWeight: 800, color: "#f8fafc", margin: 0 }}>My Salary</h1>
-            <p style={{ margin: "6px 0 0", fontFamily: "'DM Mono', monospace", fontSize: 13, color: "#475569" }}>
+            <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, color: "#5e6f8d", textTransform: "uppercase", letterSpacing: 2, marginBottom: 4 }}>HR Portal</div>
+            <h1 style={{ fontSize: 32, fontWeight: 800, color: "#0b1a2a", margin: 0 }}>My Salary</h1>
+            <p style={{ margin: "6px 0 0", fontFamily: "'DM Mono', monospace", fontSize: 13, color: "#5e6f8d" }}>
               {new Date().toLocaleDateString("en-IN", { year: "numeric" })} · Year to Date Overview
             </p>
           </div>
@@ -382,15 +383,15 @@ export default function MySalaryPage() {
           </div>
 
           {/* ── Salary history table ── */}
-          <div style={{ background: "#0d1829", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 20, overflow: "hidden", animation: "sl-fadeUp 0.5s ease 0.25s both" }}>
-            <div style={{ padding: "20px 20px 16px", borderBottom: "1px solid rgba(255,255,255,0.06)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div style={{ background: "#ffffff", border: "1px solid rgba(0,0,0,0.06)", borderRadius: 20, overflow: "hidden", boxShadow: "0 4px 16px rgba(0,0,0,0.02)", animation: "sl-fadeUp 0.5s ease 0.25s both" }}>
+            <div style={{ padding: "20px 20px 16px", borderBottom: "1px solid rgba(0,0,0,0.05)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <div>
-                <h2 style={{ fontFamily: "'Syne', sans-serif", fontWeight: 700, fontSize: 18, color: "#f1f5f9", margin: 0 }}>Salary History</h2>
-                <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, color: "#475569", marginTop: 3 }}>
+                <h2 style={{ fontFamily: "'Syne', sans-serif", fontWeight: 700, fontSize: 18, color: "#0b1a2a", margin: 0 }}>Salary History</h2>
+                <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, color: "#5e6f8d", marginTop: 3 }}>
                   Click any row to view full payslip
                 </div>
               </div>
-              <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, color: "#334155" }}>
+              <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, color: "#5e6f8d" }}>
                 {slips.length} record{slips.length !== 1 ? "s" : ""}
               </span>
             </div>
@@ -402,15 +403,15 @@ export default function MySalaryPage() {
             ) : slips.length === 0 ? (
               <div style={{ padding: "60px 20px", textAlign: "center" }}>
                 <div style={{ fontSize: 40, marginBottom: 12 }}>₹</div>
-                <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 13, color: "#334155" }}>No salary records found</div>
+                <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 13, color: "#5e6f8d" }}>No salary records found</div>
               </div>
             ) : (
               <div style={{ overflowX: "auto" }}>
                 <table>
                   <thead>
-                    <tr style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+                    <tr style={{ borderBottom: "1px solid rgba(0,0,0,0.05)" }}>
                       {["Month", "Gross Pay", "Deductions", "Net Pay", "Status", ""].map((h, i) => (
-                        <th key={i} style={{ padding: "12px 20px", textAlign: "left", fontFamily: "'DM Mono', monospace", fontSize: 10, color: "#334155", textTransform: "uppercase", letterSpacing: 1.5, fontWeight: 500 }}>
+                        <th key={i} style={{ padding: "12px 20px", textAlign: "left", fontFamily: "'DM Mono', monospace", fontSize: 10, color: "#5e6f8d", textTransform: "uppercase", letterSpacing: 1.5, fontWeight: 500 }}>
                           {h}
                         </th>
                       ))}

@@ -3,6 +3,8 @@
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import axios from "axios";
+import ProtectedPage from "@/components/ProtectedPage";
+import { useAuth } from "@/context/AuthContext";
 import { useRouter } from "next/navigation";
 import { toast } from "react-toastify";
 import {
@@ -28,6 +30,7 @@ export default function PurchaseQuotationList() {
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
+
   const [stats, setStats] = useState({
     total: 0,
     open: 0,
@@ -38,6 +41,7 @@ export default function PurchaseQuotationList() {
     totalValue: 0,
   });
   const router = useRouter();
+  const { can } = useAuth();
   const limit = 10;
 
   useEffect(() => {
@@ -169,6 +173,7 @@ export default function PurchaseQuotationList() {
   };
 
   return (
+    <ProtectedPage module="PurchaseQuotation" action="view">
     <div className="min-h-screen bg-gray-50">
       <div className="max-w-screen-xl mx-auto px-4 sm:px-6 py-6">
         {/* Header with Refresh button */}
@@ -178,17 +183,21 @@ export default function PurchaseQuotationList() {
             <p className="text-sm text-gray-400 mt-0.5">Compare supplier quotes and pricing</p>
           </div>
           <div className="flex gap-2">
-            <button
-              onClick={() => { fetchQuotations(); fetchStats(); }}
-              className="px-3 py-2 rounded-lg bg-gray-200 text-gray-700 text-sm font-semibold hover:bg-gray-300"
-            >
-              Refresh
-            </button>
-            <Link href="/admin/PurchaseQuotationList/new">
-              <button className="flex items-center gap-2 px-3.5 py-2 rounded-lg bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 transition-all shadow-sm">
-                <FaPlus className="text-xs" /> New Quotation
+            {can("PurchaseQuotation", "create") && (
+              <Link href="/admin/PurchaseQuotationList/new">
+                <button className="flex items-center gap-2 px-3.5 py-2 rounded-lg bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 transition-all shadow-sm">
+                  <FaPlus className="text-xs" /> New Quotation
+                </button>
+              </Link>
+            )}
+            {can("PurchaseQuotation", "view") && (
+              <button
+                onClick={() => { fetchQuotations(); fetchStats(); }}
+                className="px-3 py-2 rounded-lg bg-gray-200 text-gray-700 text-sm font-semibold hover:bg-gray-300"
+              >
+                Refresh
               </button>
-            </Link>
+            )}
           </div>
         </div>
 
@@ -354,36 +363,105 @@ export default function PurchaseQuotationList() {
       </div>
       <style>{`@keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}`}</style>
     </div>
+    </ProtectedPage>
   );
 }
 
+
+
 function RowMenu({ quotation, onDelete, onCopy }) {
   const router = useRouter();
+  const { can } = useAuth();
 
   const handleEmail = async () => {
     try {
       const token = localStorage.getItem("token");
+
       const res = await axios.post(
         "/api/email",
-        { type: "purchase-quotation", id: quotation._id },
-        { headers: { Authorization: `Bearer ${token}` } }
+        {
+          type: "purchase-quotation",
+          id: quotation._id,
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
       );
-      if (res.data.success) toast.success("Email sent successfully!");
-      else toast.error(res.data.message || "Failed to send email");
+
+      if (res.data.success) {
+        toast.success("Email sent successfully!");
+      } else {
+        toast.error(res.data.message || "Failed to send email");
+      }
     } catch (err) {
       console.error(err);
       toast.error("Error sending email.");
     }
   };
 
-  const actions = [
-    { icon: <FaEye />, label: "View Quotation", onClick: () => router.push(`/admin/PurchaseQuotationList/view/${quotation._id}`) },
-    { icon: <FaEdit />, label: "Edit Quotation", onClick: () => router.push(`/admin/PurchaseQuotationList/new?editId=${quotation._id}`) },
-    { icon: <FaCopy />, label: "Copy → PO", onClick: () => onCopy(quotation) }, // ✅ now redirects with pqId
-    { icon: <FaEnvelope />, label: "Email PDF", onClick: handleEmail },
-    { icon: <FaWhatsapp />, label: "WhatsApp", onClick: () => router.push(`/admin/purchase-quotation/${quotation._id}/send-whatsapp`) },
-    { icon: <FaTrash />, label: "Delete", color: "text-red-600", onClick: () => onDelete(quotation._id) },
-  ];
+  const actions = [];
+
+  // View
+  if (can("Purchase Quotation", "view")) {
+    actions.push({
+      icon: <FaEye />,
+      label: "View Quotation",
+      onClick: () =>
+        router.push(`/admin/PurchaseQuotationList/view/${quotation._id}`),
+    });
+  }
+
+  // Edit
+  if (can("Purchase Quotation", "edit")) {
+    actions.push({
+      icon: <FaEdit />,
+      label: "Edit Quotation",
+      onClick: () =>
+        router.push(`/admin/PurchaseQuotationList/new?editId=${quotation._id}`),
+    });
+  }
+
+  // Copy → Purchase Order
+  if (can("Purchase Quotation", "copy")) {
+    actions.push({
+      icon: <FaCopy />,
+      label: "Copy → PO",
+      onClick: () => onCopy(quotation),
+    });
+  }
+
+  // Email
+  if (can("Purchase Quotation", "email")) {
+    actions.push({
+      icon: <FaEnvelope />,
+      label: "Email PDF",
+      onClick: handleEmail,
+    });
+  }
+
+  // WhatsApp
+  if (can("Purchase Quotation", "whatsapp")) {
+    actions.push({
+      icon: <FaWhatsapp />,
+      label: "WhatsApp",
+      onClick: () =>
+        router.push(
+          `/admin/purchase-quotation/${quotation._id}/send-whatsapp`
+        ),
+    });
+  }
+
+  // Delete
+  if (can("Purchase Quotation", "delete")) {
+    actions.push({
+      icon: <FaTrash />,
+      label: "Delete",
+      color: "text-red-600",
+      onClick: () => onDelete(quotation._id),
+    });
+  }
 
   return <ActionMenu actions={actions} />;
 }

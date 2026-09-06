@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useSearchParams, useRouter } from "next/navigation";
+import { useSearchParams, useRouter, useParams } from "next/navigation";
 import axios from "axios";
 import { Eye, Play, Printer, Square } from "lucide-react";
 import { toast } from "react-toastify";
@@ -9,7 +9,8 @@ import "react-toastify/dist/ReactToastify.css";
 
 export default function JobCardListPage() {
   const searchParams = useSearchParams();
-  const productionOrderId = searchParams.get("productionOrderId");
+  const params = useParams();
+  const productionOrderId = searchParams.get("productionOrderId") || params.id;
   const router = useRouter();
 
   const [jobCards, setJobCards] = useState([]);

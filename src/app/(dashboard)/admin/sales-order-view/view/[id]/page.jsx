@@ -4,6 +4,7 @@ import React, { useEffect, useState, Suspense } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import axios from 'axios';
+import ProtectedPage from "@/components/ProtectedPage";
 import { toast } from 'react-toastify';
 import { 
   FaArrowLeft, FaEdit, FaUser, FaCalendarAlt, FaBoxOpen, 
@@ -93,9 +94,14 @@ const ItemImage = ({ src, alt, className = "w-10 h-10" }) => {
 // --- Main Component Wrapper (Required for useSearchParams) ---
 export default function SalesOrderDetailWrapper() {
   return (
+    <ProtectedPage
+      module="Sales Order"
+      action="view"
+    >
     <Suspense fallback={<div className="flex items-center justify-center min-h-screen">Loading...</div>}>
       <SalesOrderDetail />
     </Suspense>
+    </ProtectedPage>
   );
 }
 

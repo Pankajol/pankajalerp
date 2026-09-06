@@ -134,7 +134,7 @@ export async function POST(req, { params }) {
     await ProductionOrder.findByIdAndUpdate(
       productionOrderId,
       {
-        $set: { status: 'transferred' },
+        $set: { status: 'In Progress' },
         $inc: { transferqty: qtyParam || 0 },
       },
       { new: true }

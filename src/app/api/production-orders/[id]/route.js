@@ -113,9 +113,9 @@ export async function GET(req, { params }) {
         path: "items.item",
         select: "unitPrice itemName itemCode",
       })
-      .populate("operationFlow.operation")
-.populate("operationFlow.machine")
-.populate("operationFlow.operator")
+      .populate({ path: "operationFlow.operation", strictPopulate: false })
+      .populate({ path: "operationFlow.machine", strictPopulate: false })
+      .populate({ path: "operationFlow.operator", strictPopulate: false })
 
       .lean(); // IMPORTANT: convert mongoose document → plain JSON
 

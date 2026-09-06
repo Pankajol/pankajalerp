@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import axios from "axios";
+import { useAuth } from "@/context/AuthContext";
 import { useRouter } from "next/navigation";
 import {
   FaEdit, FaTrash, FaCopy, FaEye,
@@ -23,6 +24,7 @@ export default function SalesQuotationList() {
   const [totalPages, setTotalPages] = useState(0);
   const [stats, setStats] = useState({ total: 0, approved: 0, pending: 0, rejected: 0 });
   const router = useRouter();
+  const { can, loading: authLoading, user } = useAuth();
 
   const fetchQuotations = useCallback(async () => {
     setLoading(true);
@@ -141,6 +143,20 @@ export default function SalesQuotationList() {
     setCurrentPage(1);
   };
 
+  if (authLoading) {
+  return null; // or your loader
+}
+
+if (!can("Sales Quotation", "view")) {
+  return (
+    <div className="flex items-center justify-center h-[70vh]">
+      <h2 className="text-xl font-semibold text-red-500">
+        You don't have permission to view this page.
+      </h2>
+    </div>
+  );
+}
+
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="max-w-screen-xl mx-auto px-4 sm:px-6 py-6">
@@ -150,11 +166,14 @@ export default function SalesQuotationList() {
             <h1 className="text-2xl font-extrabold tracking-tight text-gray-900">Sales Quotations</h1>
             <p className="text-sm text-gray-400 mt-0.5">{totalRecords} total quotations</p>
           </div>
-          <Link href="/admin/sales-quotation-view/new">
-            <button className="flex items-center gap-2 px-3.5 py-2 rounded-lg bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 transition-all shadow-sm shadow-indigo-200">
-              <FaPlus className="text-xs" /> Create Quotation
-            </button>
-          </Link>
+        {can("Sales Quotation", "create") && (
+  <Link href="/admin/sales-quotation-view/new">
+    <button className="flex items-center gap-2 px-3.5 py-2 rounded-lg bg-indigo-600 text-white">
+      <FaPlus className="text-xs" />
+      Create Quotation
+    </button>
+  </Link>
+)}
         </div>
 
         {/* Stats Cards */}
@@ -392,56 +411,91 @@ export default function SalesQuotationList() {
   );
 }
 
-// RowMenu component
 function RowMenu({ quotation, onDelete, onCopy }) {
   const router = useRouter();
+  const { can } = useAuth();
 
-  const actions = [
-    {
+  const actions = [];
+
+  // View
+  if (can("Sales Quotation", "view")) {
+    actions.push({
       icon: <FaEye />,
       label: "View",
-      onClick: () => router.push(`/admin/sales-quotation-view/view/${quotation._id}`),
-    },
-    {
+      onClick: () =>
+        router.push(`/admin/sales-quotation-view/view/${quotation._id}`),
+    });
+  }
+
+  // Edit
+  if (can("Sales Quotation", "edit")) {
+    actions.push({
       icon: <FaEdit />,
       label: "Edit",
-      onClick: () => router.push(`/admin/sales-quotation-view/new?editId=${quotation._id}`),
-    },
-    {
+      onClick: () =>
+        router.push(`/admin/sales-quotation-view/new?editId=${quotation._id}`),
+    });
+  }
+
+  // Copy
+  if (can("Sales Quotation", "copy")) {
+    actions.push({
       icon: <FaCopy />,
       label: "Copy → Order",
       onClick: () => onCopy(quotation, "Order"),
-    },
-    {
+    });
+  }
+
+  // Email
+  if (can("Sales Quotation", "email")) {
+    actions.push({
       icon: <FaEnvelope />,
       label: "Email",
       onClick: async () => {
         try {
           const token = localStorage.getItem("token");
+
           const res = await axios.post(
             "/api/email",
             { type: "quotation", id: quotation._id },
-            { headers: { Authorization: `Bearer ${token}` } }
+            {
+              headers: {
+                Authorization: `Bearer ${token}`,
+              },
+            }
           );
-          if (res.data.success) toast.success("Email sent!");
-          else toast.error(res.data.message || "Failed to send email.");
+
+          if (res.data.success) {
+            toast.success("Email sent!");
+          } else {
+            toast.error(res.data.message || "Failed to send email.");
+          }
         } catch {
           toast.error("Error sending email.");
         }
       },
-    },
-    {
+    });
+  }
+
+  // WhatsApp
+  if (can("Sales Quotation", "whatsapp")) {
+    actions.push({
       icon: <FaWhatsapp />,
       label: "WhatsApp",
-      onClick: () => router.push(`/admin/sales-quotation-whatsapp/${quotation._id}`),
-    },
-    {
+      onClick: () =>
+        router.push(`/admin/sales-quotation-whatsapp/${quotation._id}`),
+    });
+  }
+
+  // Delete
+  if (can("Sales Quotation", "delete")) {
+    actions.push({
       icon: <FaTrash />,
       label: "Delete",
       color: "text-red-600",
       onClick: () => onDelete(quotation._id),
-    },
-  ];
+    });
+  }
 
   return <ActionMenu actions={actions} />;
 }

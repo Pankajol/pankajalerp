@@ -1,5 +1,8 @@
 import connectDB from "@/lib/db";
 import Task from "@/models/TaskModel";
+import SubTask from "@/models/project/SubTaskModel";
+import "@/models/project/ProjectModel";  // ✅ just import, don't assign
+
 import { getTokenFromHeader, verifyJWT } from "@/lib/auth";
 import { NextResponse } from "next/server";
 

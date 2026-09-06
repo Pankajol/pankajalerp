@@ -73,6 +73,7 @@ export async function POST(req) {
     const companyData = company.toObject ? company.toObject() : company;
     delete companyData.password;
 
+    console.log(companyData)
     return NextResponse.json({
       token,
       company: {

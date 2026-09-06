@@ -54,6 +54,12 @@ const ProductionOrderSchema = new Schema(
       type: Number,
       default: 1,
     },
+    // Shop-floor quantities. These fields drive the production list and reports.
+    transferqty: { type: Number, default: 0, min: 0 },
+    issuforproductionqty: { type: Number, default: 0, min: 0 },
+    reciptforproductionqty: { type: Number, default: 0, min: 0 },
+    rate: { type: Number, default: 0, min: 0 },
+    amount: { type: Number, default: 0, min: 0 },
     productionDate: {
       type: Date,
       default: Date.now,
@@ -110,6 +116,13 @@ const ProductionOrderSchema = new Schema(
     timestamps: true,
   }
 );
+
+// A previous PPC model used the same Mongoose name. During hot reload Mongoose
+// can retain that stale schema; replace it only when it is not this schema.
+const existingProductionOrder = mongoose.models.ProductionOrder;
+if (existingProductionOrder && !existingProductionOrder.schema.path("operationFlow")) {
+  delete mongoose.models.ProductionOrder;
+}
 
 export default mongoose.models.ProductionOrder ||
   mongoose.model("ProductionOrder", ProductionOrderSchema);

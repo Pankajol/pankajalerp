@@ -3,9 +3,11 @@
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import ProtectedPage from "@/components/ProtectedPage";
 import { toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import axios from "axios";
+import { useAuth } from "@/context/AuthContext";
 import {
   FaEdit, FaTrash, FaCopy, FaEye,
   FaEnvelope, FaSearch, FaPlus,
@@ -27,6 +29,7 @@ export default function DeliveryList() {
   const [itemsPerPage, setItemsPerPage] = useState(10);
   const [totalRecords, setTotalRecords] = useState(0);
   const [totalPages, setTotalPages] = useState(0);
+  const { can } = useAuth();
 
   const fetchDeliveries = useCallback(async () => {
     setLoading(true);
@@ -174,6 +177,7 @@ export default function DeliveryList() {
   };
 
   return (
+    <ProtectedPage module="Delivery" action="view">
     <div className="min-h-screen bg-gray-50">
       <div className="max-w-screen-xl mx-auto px-4 sm:px-6 py-6">
 
@@ -184,18 +188,23 @@ export default function DeliveryList() {
             <p className="text-sm text-gray-400 mt-0.5">{totalRecords} total deliveries</p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <button onClick={downloadTemplate} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white border border-gray-200 text-gray-600 text-sm font-semibold hover:bg-gray-50 transition-all shadow-sm">
-              <FaDownload className="text-xs" /> Template
-            </button>
-            <label className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white border border-gray-200 text-gray-600 text-sm font-semibold hover:bg-gray-50 transition-all shadow-sm cursor-pointer">
-              <FaCloudUploadAlt className="text-xs" /> {uploading ? "Uploading..." : "Bulk Upload"}
-              <input type="file" hidden accept=".csv" onChange={handleBulkUpload} disabled={uploading} />
-            </label>
-            <Link href="/admin/delivery-view/new">
-              <button className="flex items-center gap-2 px-3.5 py-2 rounded-lg bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 transition-all shadow-sm shadow-indigo-200">
-                <FaPlus className="text-xs" /> Create Delivery
+            {can("Delivery", "create") && (
+              <Link href="/admin/delivery-view/new" className="px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 transition-all flex items-center gap-2">
+                <FaPlus /> New Delivery
+              </Link>
+            )}
+            {
+can("Delivery", "upload") && (
+              <label className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white border border-gray-200 text-gray-600 text-sm font-semibold hover:bg-gray-50 transition-all shadow-sm cursor-pointer">
+                <FaCloudUploadAlt className="text-xs" /> {uploading ? "Uploading..." : "Bulk Upload"}
+                <input type="file" hidden accept=".csv" onChange={handleBulkUpload} disabled={uploading} />
+              </label>
+            )}
+            {can("Delivery", "download") && (
+              <button onClick={downloadTemplate} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white border border-gray-200 text-gray-600 text-sm font-semibold hover:bg-gray-50 transition-all shadow-sm">
+                <FaDownload className="text-xs" /> Template
               </button>
-            </Link>
+            )}
           </div>
         </div>
 
@@ -417,28 +426,91 @@ export default function DeliveryList() {
         }
       `}</style>
     </div>
+    </ProtectedPage>
   );
 }
 
 function DeliveryRowMenu({ delivery, onDelete, onCopy }) {
   const router = useRouter();
+  const { can } = useAuth();
 
-  const actions = [
-    { icon: <FaEye />, label: "View", onClick: () => router.push(`/admin/delivery-view/view/${delivery._id}`) },
-    { icon: <FaEdit />, label: "Edit", onClick: () => router.push(`/admin/delivery-view/new?editId=${delivery._id}`) },
-    { icon: <FaCopy />, label: "Copy → Invoice", onClick: () => onCopy(delivery, "Invoice") },
-    { icon: <FaEnvelope />, label: "Email", onClick: async () => {
+  const actions = [];
+
+  // View
+  if (can("Delivery", "view")) {
+    actions.push({
+      icon: <FaEye />,
+      label: "View",
+      onClick: () =>
+        router.push(`/admin/delivery-view/view/${delivery._id}`),
+    });
+  }
+
+  // Edit
+  if (can("Delivery", "edit")) {
+    actions.push({
+      icon: <FaEdit />,
+      label: "Edit",
+      onClick: () =>
+        router.push(`/admin/delivery-view/new?editId=${delivery._id}`),
+    });
+  }
+
+  // Copy → Invoice
+  if (can("Delivery", "copy")) {
+    actions.push({
+      icon: <FaCopy />,
+      label: "Copy → Invoice",
+      onClick: () => onCopy(delivery, "Invoice"),
+    });
+  }
+
+  // Email
+  if (can("Delivery", "email")) {
+    actions.push({
+      icon: <FaEnvelope />,
+      label: "Email",
+      onClick: async () => {
         try {
-          const res = await axios.post("/api/email", { type: "delivery", id: delivery._id });
-          if (res.data.success) toast.success("Email sent!");
-          else toast.error(res.data.message || "Failed to send email.");
-        } catch {
+          const token = localStorage.getItem("token");
+
+          const res = await axios.post(
+            "/api/email",
+            {
+              type: "delivery",
+              id: delivery._id,
+            },
+            {
+              headers: {
+                Authorization: `Bearer ${token}`,
+              },
+            }
+          );
+
+          if (res.data.success) {
+            toast.success("Email sent!");
+          } else {
+            toast.error(
+              res.data.message || "Failed to send email."
+            );
+          }
+        } catch (error) {
+          console.error("Delivery email error:", error);
           toast.error("Email error");
         }
-      }
-    },
-    { icon: <FaTrash />, label: "Delete", color: "text-red-600", onClick: () => onDelete(delivery._id) },
-  ];
+      },
+    });
+  }
+
+  // Delete
+  if (can("Delivery", "delete")) {
+    actions.push({
+      icon: <FaTrash />,
+      label: "Delete",
+      color: "text-red-600",
+      onClick: () => onDelete(delivery._id),
+    });
+  }
 
   return <ActionMenu actions={actions} />;
 }

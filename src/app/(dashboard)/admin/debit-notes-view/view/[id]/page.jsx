@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
+import ProtectedPage from '@/components/ProtectedPage';
 import axios from 'axios';
 import { 
   FaArrowLeft, FaUser, FaCalendarAlt, FaBoxOpen, 
@@ -109,12 +110,13 @@ export default function DebitNoteView() {
   );
 
   return (
-    <div className="min-h-screen bg-gray-50 py-8 px-4 sm:px-6">
-      <div className="max-w-6xl mx-auto">
-        
-        {/* --- Top Navigation --- */}
-        <div className="flex flex-wrap items-center justify-between gap-4 mb-8">
-          <button onClick={() => router.push("/admin/debit-notes-view")} 
+    <ProtectedPage module="DebitNote" action="view">
+      <div className="min-h-screen bg-gray-50 py-8 px-4 sm:px-6">
+        <div className="max-w-6xl mx-auto">
+          
+          {/* --- Top Navigation --- */}
+          <div className="flex flex-wrap items-center justify-between gap-4 mb-8">
+            <button onClick={() => router.push("/admin/debit-notes-view")} 
             className="flex items-center gap-2 text-orange-600 font-black text-xs uppercase tracking-widest hover:text-orange-800 transition-all">
             <FaArrowLeft /> Back to List
           </button>
@@ -269,5 +271,6 @@ export default function DebitNoteView() {
         </div>
       </div>
     </div>
+    </ProtectedPage>
   );
 }

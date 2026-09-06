@@ -16,6 +16,7 @@ cloudinary.config({
 function isAuthorized(user) {
   if (!user) return false;
   if (user.type === "company") return true;
+  if (user.role === "Admin" || user.role === "admin") return true;
   const roles = Array.isArray(user.roles) ? user.roles : [];
   if (roles.includes("Admin") || roles.includes("admin")) return true;
   if (roles.includes("masters")) return true;
@@ -59,9 +60,9 @@ async function parseMultipart(req) {
 // ------------------- GET /api/suppliers -------------------
 export async function GET(req) {
   await dbConnect();
-  const { user, error } = await validateUser(req);
+  const { user, error, status } = await validateUser(req);
   if (error) {
-    return NextResponse.json({ success: false, message: error }, { status: 401 });
+    return NextResponse.json({ success: false, message: error }, { status });
   }
 
   try {
@@ -71,7 +72,7 @@ export async function GET(req) {
     // Get single supplier (for editing)
     if (id) {
       const supplier = await Supplier.findOne({ _id: id, companyId: user.companyId })
-        .populate("glAccount", "accountName accountCode")
+        .populate("glAccount", "name code type group")
         .lean();
       if (!supplier) {
         return NextResponse.json({ success: false, message: "Not found" }, { status: 404 });
@@ -82,16 +83,23 @@ export async function GET(req) {
     // Paginated list
     const page = Math.max(parseInt(searchParams.get("page")) || 1, 1);
     const limit = Math.min(parseInt(searchParams.get("limit")) || 10, 100);
-    const search = searchParams.get("search") || "";
+    const search = searchParams.get("search")?.trim() || "";
     const supplierType = searchParams.get("supplierType");
 
     const query = { companyId: user.companyId };
     if (search) {
+      const safeSearch = search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
       query.$or = [
-        { supplierName: { $regex: search, $options: "i" } },
-        { supplierCode: { $regex: search, $options: "i" } },
-        { emailId: { $regex: search, $options: "i" } },
-        { mobileNumber: { $regex: search, $options: "i" } },
+        { supplierName: { $regex: safeSearch, $options: "i" } },
+        { supplierCode: { $regex: safeSearch, $options: "i" } },
+        { supplierGroup: { $regex: safeSearch, $options: "i" } },
+        { supplierCategory: { $regex: safeSearch, $options: "i" } },
+        { contactPersonName: { $regex: safeSearch, $options: "i" } },
+        { emailId: { $regex: safeSearch, $options: "i" } },
+        { mobileNumber: { $regex: safeSearch, $options: "i" } },
+        { gstNumber: { $regex: safeSearch, $options: "i" } },
+        { pan: { $regex: safeSearch, $options: "i" } },
+        { udyamNumber: { $regex: safeSearch, $options: "i" } },
       ];
     }
     if (supplierType && supplierType !== "All") {
@@ -99,20 +107,37 @@ export async function GET(req) {
     }
 
     const skip = (page - 1) * limit;
-    const [suppliers, total] = await Promise.all([
+    const [suppliers, total, typeCounts] = await Promise.all([
       Supplier.find(query)
-        .select("supplierName supplierCode emailId mobileNumber supplierType supplierGroup valid glAccount")
-        .populate("glAccount", "accountName accountCode")
+        .select("supplierName supplierCode supplierCategory emailId mobileNumber contactPersonName supplierType supplierGroup valid udyamNumber gstNumber glAccount createdAt")
+        .populate("glAccount", "name code type group")
+        .sort({ createdAt: -1, supplierName: 1 })
         .skip(skip)
         .limit(limit)
         .lean(),
       Supplier.countDocuments(query),
+      Supplier.aggregate([
+        { $match: { companyId: new mongoose.Types.ObjectId(user.companyId) } },
+        { $group: { _id: "$supplierType", count: { $sum: 1 } } },
+      ]),
     ]);
+
+    const stats = typeCounts.reduce(
+      (acc, item) => {
+        if (item._id === "Manufacturer") acc.manufacturer = item.count;
+        if (item._id === "Distributor") acc.distributor = item.count;
+        if (item._id === "Wholesaler") acc.wholesaler = item.count;
+        if (item._id === "Service Provider") acc.service = item.count;
+        acc.total += item.count;
+        return acc;
+      },
+      { total: 0, manufacturer: 0, distributor: 0, wholesaler: 0, service: 0 }
+    );
 
     return NextResponse.json({
       success: true,
       data: suppliers,
-      meta: { page, limit, total, pages: Math.ceil(total / limit) },
+      meta: { page, limit, total, pages: Math.max(1, Math.ceil(total / limit)), stats },
     });
   } catch (err) {
     console.error(err);
@@ -123,9 +148,9 @@ export async function GET(req) {
 // ------------------- POST /api/suppliers -------------------
 export async function POST(req) {
   await dbConnect();
-  const { user, error } = await validateUser(req);
+  const { user, error, status } = await validateUser(req);
   if (error) {
-    return NextResponse.json({ success: false, message: error }, { status: 401 });
+    return NextResponse.json({ success: false, message: error }, { status });
   }
 
   try {
@@ -145,8 +170,17 @@ export async function POST(req) {
       supplierData = await req.json();
     }
 
-    // Required fields
-    if (!supplierData.supplierCode || !supplierData.supplierName || !supplierData.pan) {
+    if (!supplierData.supplierCode) {
+      const latest = await Supplier.findOne({ companyId: user.companyId })
+        .select("supplierCode")
+        .sort({ supplierCode: -1 })
+        .lean();
+      const next = parseInt(latest?.supplierCode?.split("-")[1] || "0", 10) + 1;
+      supplierData.supplierCode = `SUPP-${String(next).padStart(4, "0")}`;
+    }
+
+    // Required business fields
+    if (!supplierData.supplierName || !supplierData.supplierType || !supplierData.supplierGroup || !supplierData.emailId || !supplierData.pan || !supplierData.gstCategory) {
       return NextResponse.json({ success: false, message: "Missing required fields" }, { status: 400 });
     }
 
@@ -167,7 +201,7 @@ if (!glAccountId) {
 
   let account = await AccountHead.findOne({
     companyId: user.companyId,
-    accountName: supplierData.supplierName,
+    name: supplierData.supplierName,
     type: "Liability",
   });
 
@@ -188,7 +222,14 @@ if (!glAccountId) {
   glAccountId = account._id;
 
 } else {
-  glAccountId = new mongoose.Types.ObjectId(glAccountId);
+  if (!mongoose.Types.ObjectId.isValid(glAccountId)) {
+    return NextResponse.json({ success: false, message: "Select a valid GL account." }, { status: 400 });
+  }
+  const account = await AccountHead.findOne({ _id: glAccountId, companyId: user.companyId, isActive: true });
+  if (!account) {
+    return NextResponse.json({ success: false, message: "The selected GL account is unavailable." }, { status: 400 });
+  }
+  glAccountId = account._id;
 }
 
     // Merge attachments
@@ -205,11 +246,12 @@ if (!glAccountId) {
     });
     await supplier.save();
 
-    const populated = await Supplier.findById(supplier._id).populate("glAccount", "accountName accountCode");
+    const populated = await Supplier.findById(supplier._id).populate("glAccount", "name code type group");
     return NextResponse.json({ success: true, data: populated }, { status: 201 });
   } catch (err) {
     console.error(err);
-    return NextResponse.json({ success: false, message: "Failed to create supplier" }, { status: 500 });
+    const message = err.code === 11000 || err.name === "ValidationError" ? err.message : "Failed to create supplier";
+    return NextResponse.json({ success: false, message }, { status: 500 });
   }
 }
 

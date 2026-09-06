@@ -6,6 +6,7 @@ import Select from "react-select";
 import { toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import { useRouter } from "next/navigation";
+import ProtectedPage from "@/components/ProtectedPage";
 import { 
   FaBox, FaWarehouse, FaListOl, FaProjectDiagram, 
   FaPlus, FaTrash, FaCheck, FaArrowLeft, FaCogs, FaTools 
@@ -161,6 +162,7 @@ export default function BOMPage() {
   );
 
   return (
+    <ProtectedPage module="BoM" action="create">
     <div className="min-h-screen bg-gray-50 py-8 px-4 sm:px-10">
       <div className="max-w-7xl mx-auto">
         
@@ -355,6 +357,7 @@ export default function BOMPage() {
         </div>
       </div>
     </div>
+    </ProtectedPage>
   );
 }
 

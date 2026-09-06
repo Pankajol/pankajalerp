@@ -4,6 +4,7 @@ import { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import axios from "axios";
 import ItemSection from "@/components/ItemSection";
+import ProtectedPage from "@/components/ProtectedPage";
 import CustomerSearch from "@/components/CustomerSearch";
 import CustomerAddressSelector from "@/components/CustomerAddressSelector";
 import { toast, ToastContainer } from "react-toastify";
@@ -160,9 +161,11 @@ const initialState = {
 // ──────────────────────────────────────────────────────────────
 export default function SalesInvoicePage() {
   return (
+    <ProtectedPage module="SalesInvoice" action="create">
     <Suspense fallback={<div className="flex items-center justify-center min-h-screen text-gray-400">Loading Invoice Form...</div>}>
       <SalesInvoiceForm />
     </Suspense>
+    </ProtectedPage>
   );
 }
 

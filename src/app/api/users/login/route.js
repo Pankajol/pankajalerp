@@ -123,6 +123,11 @@ export async function POST(req) {
       expired: isExpired,
     });
 
+
+console.log(modules);
+console.log(modules["Sales Quotation"]);
+console.log(modules["Sales Quotation"]?.permissions);
+
     // Remove sensitive fields for response
     const { password: _, __v, ...safeUser } = user.toObject();
     safeUser.modules = modules;
@@ -136,6 +141,7 @@ export async function POST(req) {
     safeUser.companySubscriptionStatus = companyData?.subscriptionStatus || 'active';
 
     return NextResponse.json({ token, user: safeUser });
+    
   } catch (e) {
     console.error('Login error:', e);
     return NextResponse.json({ message: 'Server error' }, { status: 500 });

@@ -13,6 +13,36 @@ import { FiArrowLeft, FiEye, FiEyeOff } from "react-icons/fi";
 import { GiStockpiles } from "react-icons/gi";
 import { SiCivicrm } from "react-icons/si";
 import LogoutButton from "@/components/LogoutButton";
+import {
+  LayoutDashboard,
+  Package,
+  Beaker,
+  ClipboardList,
+  Boxes,
+  Box,
+  Palette,
+  Route,
+  Hash,
+  BarChart,
+  CheckSquare,
+  FileText,
+  FilePlus ,
+  CheckCircle,
+  Warehouse,
+  ClipboardCheck,
+ Gauge,
+ Layers,
+ ChartPie, 
+  Activity,
+  Scan,
+  IndianRupee,
+  ShoppingCart,
+
+  ChartLine,
+  Users,
+ 
+  
+} from "lucide-react";
 
 // ------------------------- Safe View Context -------------------------
 const SafeViewContext = createContext({ safeViewEnabled: false, toggleSafeView: () => {} });
@@ -62,13 +92,14 @@ export const maskEmail = (email, safeViewActive) => {
 
 // ------------------------- MODULE_ROUTE_MAP (complete – keep as is) -------------------------
 const MODULE_ROUTE_MAP = {
+
   "Sales Quotation": [
     { label: "Quotation View",   path: "/admin/sales-quotation-view", needsView: true },
-    { label: "Create Quotation", path: "/admin/sales-quotation",      needsCreate: true },
+    { label: "Create Quotation", path: "/admin/sales-quotation-view/new",      needsCreate: true },
   ],
   "Sales Order": [
     { label: "Order View",       path: "/admin/sales-order-view",     needsView: true },
-    { label: "Create Order",     path: "/admin/sales-order",          needsCreate: true },
+    { label: "Create Order",     path: "/admin/sales-order-view/new",          needsCreate: true },
   ],
   "Sales Invoice": [
     { label: "Invoice View",     path: "/admin/sales-invoice-view",   needsView: true },
@@ -114,11 +145,11 @@ const MODULE_ROUTE_MAP = {
   ],
   "attendance": [
     { label: "My Attendance",       path: "/admin/hr/my-attendance",         needsView: true },
-    { label: "Attendance Report",   path: "/admin/hr/attendance",            needsView: true },
+    // { label: "Attendance Report",   path: "/admin/hr/attendance",            needsView: true },
   ],
   "leaves": [
     { label: "My Leaves",           path: "/admin/hr/my-leaves",             needsView: true },
-    { label: "Leave Management",    path: "/admin/hr/leaves",                needsView: true },
+    // { label: "Leave Management",    path: "/admin/hr/leaves",                needsView: true },
   ],
   "salary": [
     { label: "My Salary",           path: "/admin/hr/my-salary",             needsView: true },
@@ -152,6 +183,7 @@ const MODULE_ROUTE_MAP = {
   ],
   "Production Order": [
     { label: "Production Order",   path: "/admin/ProductionOrder",            needsView: true },
+    { label: "Production View",    path: "/admin/productionorders-list-view",             needsView: true },
     { label: "Production Board",   path: "/admin/production-board",           needsView: true },
   ],
   "BoM": [
@@ -235,7 +267,8 @@ const MODULE_ROUTE_MAP = {
     { label: "Downtime",                path: "/admin/ppc/downtime",                   needsView: true },
   ],
   "Task": [
-    { label: "Tasks",              path: "/admin/tasks",                       needsView: true },
+    { label: "Tasks",              path: "/admin/tasks/my-tasks",                       needsView: true },
+    
     { label: "Tasks Board",        path: "/admin/tasks/board",                 needsView: true },
   ],
 };
@@ -577,13 +610,15 @@ export default function Layout({ children }) {
                   <SidebarItem href="/admin/bom-view" icon={<HiOutlineCube />} label="BoM View" onClick={closeSidebar} isActive={isActive("/admin/bom-view")} />
                   <SidebarItem href="/admin/productionorders-list-view" icon={<HiReceiptTax />} label="Production Orders View" onClick={closeSidebar} isActive={isActive("/admin/productionorders-list-view")} />
                   <SidebarItem href="/admin/production-board" icon={<HiChartSquareBar />} label="Production Board" onClick={closeSidebar} isActive={isActive("/admin/production-board")} />
+            
+                  <SidebarItem href="/admin/production/reports" icon={<HiChartSquareBar />} label="Production Reports" onClick={closeSidebar} isActive={isActive("/admin/production/reports")} />
                 </Section>
 
                 <Section title="Project" icon={<HiViewGrid />} isOpen={openMenu === "project"} onToggle={() => toggleMenu("project")}>
                   <SidebarItem href="/admin/project/workspaces" icon={<HiOutlineOfficeBuilding />} label="Workspaces" onClick={closeSidebar} isActive={isActive("/admin/project/workspaces")} />
                   <SidebarItem href="/admin/project/projects" icon={<HiOutlineCube />} label="Projects" onClick={closeSidebar} isActive={isActive("/admin/project/projects")} />
                   <SidebarItem href="/admin/project/tasks/board" icon={<HiPuzzle />} label="Tasks Board" onClick={closeSidebar} isActive={isActive("/admin/project/tasks/board")} />
-                  <SidebarItem href="/admin/project/tasks" icon={<HiPuzzle />} label="Tasks List" onClick={closeSidebar} isActive={isActive("/admin/project/tasks")} />
+                  <SidebarItem href="/admin/project/tasks" icon={< HiPuzzle />} label="Tasks List" onClick={closeSidebar} isActive={isActive("/admin/project/tasks")} />
                 </Section>
 
                 <Section title="HR" icon={<HiUserGroup />} isOpen={openMenu === "hr"} onToggle={() => toggleMenu("hr")}>
@@ -591,6 +626,7 @@ export default function Layout({ children }) {
                   <SidebarItem href="/admin/hr/Dashboard" icon={<HiUserGroup />} label="Employee Details" onClick={closeSidebar} isActive={isActive("/admin/hr/Dashboard")} />
                   <SidebarItem href="/admin/hr/masters" icon={<HiUserGroup />} label="Department" onClick={closeSidebar} isActive={isActive("/admin/hr/masters")} />
                   <SidebarItem href="/admin/hr/leaves" icon={<HiUserGroup />} label="Leave" onClick={closeSidebar} isActive={isActive("/admin/hr/leaves")} />
+                  <SidebarItem href="/admin/hr/leave-balances" icon={<HiUserGroup />} label="Leave Allocation" onClick={closeSidebar} isActive={isActive("/admin/hr/leave-balances")} />
                   <SidebarItem href="/admin/hr/attendance" icon={<HiUserGroup />} label="Attendance" onClick={closeSidebar} isActive={isActive("/admin/hr/attendance")} />
                   <SidebarItem href="/admin/hr/salary" icon={<HiUserGroup />} label="Salary" onClick={closeSidebar} isActive={isActive("/admin/hr/salary")} />
                   <SidebarItem href="/admin/hr/payroll" icon={<HiUserGroup />} label="Payroll" onClick={closeSidebar} isActive={isActive("/admin/hr/payroll")} />
@@ -602,6 +638,7 @@ export default function Layout({ children }) {
                 </Section>
 
                 <Section title="PPC" icon={<HiPuzzle />} isOpen={openMenu === "ppc"} onToggle={() => toggleMenu("ppc")}>
+                  <SidebarItem href="/admin/ppc" icon={<HiViewGrid />} label="Dashboard" onClick={closeSidebar} isActive={isActive("/admin/ppc")} />
                   <SidebarItem href="/admin/ppc/operatorsPage" icon={<HiUser />} label="Operators" onClick={closeSidebar} isActive={isActive("/admin/ppc/operatorsPage")} />
                   <SidebarItem href="/admin/ppc/machinesPage" icon={<HiOutlineCube />} label="Machines" onClick={closeSidebar} isActive={isActive("/admin/ppc/machinesPage")} />
                   <SidebarItem href="/admin/ppc/resourcesPage" icon={<HiOutlineLibrary />} label="Resources" onClick={closeSidebar} isActive={isActive("/admin/ppc/resourcesPage")} />
@@ -612,7 +649,145 @@ export default function Layout({ children }) {
                   <SidebarItem href="/admin/ppc/productionOrderPage" icon={<HiReceiptTax />} label="Production Planning" onClick={closeSidebar} isActive={isActive("/admin/ppc/productionOrderPage")} />
                   <SidebarItem href="/admin/ppc/jobcards" icon={<HiReceiptTax />} label="Job Card" onClick={closeSidebar} isActive={isActive("/admin/ppc/jobcards")} />
                   <SidebarItem href="/admin/ppc/downtime" icon={<HiReceiptTax />} label="Downtime" onClick={closeSidebar} isActive={isActive("/admin/ppc/downtime")} />
+                  <SidebarItem href="/admin/ppc/reports" icon={<HiChartSquareBar />} label="Reports" onClick={closeSidebar} isActive={isActive("/admin/ppc/reports")} />
                 </Section>
+
+                <Section
+  title="Textiles"
+  icon={<LayoutDashboard className="text-lg" />}
+  isOpen={openMenu === "textiles"}
+  onToggle={() => toggleMenu("textiles")}
+>
+  <SidebarItem
+    href="/admin/textiles/dashboard"
+    icon={<LayoutDashboard size={16} />}
+    label="Dashboard"
+    onClick={closeSidebar}
+    isActive={isActive("/admin/textiles/dashboard")}
+  />
+  <SidebarItem
+    href="/admin/textiles/flow"
+    icon={<Route size={16} />}
+    label="Complete Textile Flow"
+    onClick={closeSidebar}
+    isActive={isActive("/admin/textiles/flow")}
+  />
+  <SidebarItem
+    href="/admin/textiles/doctype"
+    icon={<Boxes size={16} />}
+    label="Masters & Documents"
+    onClick={closeSidebar}
+    isActive={isActive("/admin/textiles/doctype")}
+  />
+  <SidebarItem
+    href="/admin/textiles/products"
+    icon={<Package size={16} />}
+    label="Products"
+    onClick={closeSidebar}
+    isActive={isActive("/admin/textiles/products")}
+  />
+  <SidebarItem
+    href="/admin/textiles/designs"
+    icon={<Palette size={16} />}
+    label="Design Master"
+    onClick={closeSidebar}
+    isActive={isActive("/admin/textiles/designs")}
+  />
+  <SidebarItem
+    href="/admin/textiles/dyeing-recipes"
+    icon={<Beaker size={16} />}
+    label="Dyeing Recipes"
+    onClick={closeSidebar}
+    isActive={isActive("/admin/textiles/dyeing-recipes")}
+  />
+  <SidebarItem
+  href="/admin/textiles/bom"
+  icon={<Package size={16} />}
+  label="Textile BOM"
+  onClick={closeSidebar}
+  isActive={isActive("/admin/textiles/bom")}
+/>
+<SidebarItem href="/admin/textiles/shade-card" icon={<Palette size={16} />} label="Shade Card" />
+<SidebarItem href="/admin/textiles/quality-parameters" icon={<CheckCircle size={16} />} label="Quality Parameters" />
+<SidebarItem href="/admin/textiles/routings" icon={<Route size={16} />} label="Routings" />
+<SidebarItem href="/admin/textiles/lot-tracking" icon={<Hash size={16} />} label="Lot Tracking" />
+<SidebarItem href="/admin/textiles/lot-assignment" icon={<CheckSquare size={16} />} label="Lot Assignment" />
+<SidebarItem href="/admin/textiles/takas" icon={<Hash size={16} />} label="Taka / Rolls" />
+<SidebarItem href="/admin/textiles/job-work/requests" icon={<FileText size={16} />} label="Job Work Requests" />
+<SidebarItem href="/admin/textiles/job-work/challans" icon={<FilePlus size={16} />} label="Job Work Challans" />
+<SidebarItem href="/admin/textiles/job-work/receipts" icon={<CheckCircle size={16} />} label="Job Work Receipts" />
+<SidebarItem href="/admin/textiles/job-work/vendor-stock" icon={<Warehouse size={16} />} label="Vendor Stock" />
+<SidebarItem href="/admin/textiles/quality-inspection" icon={<ClipboardCheck size={16} />} label="QC Inspection" />
+<SidebarItem href="/admin/textiles/traceability" icon={<Activity size={16} />} label="Traceability" />
+<SidebarItem href="/admin/textiles/production/wip" icon={<Activity size={16} />} label="Process WIP" />
+<SidebarItem href="/admin/textiles/scan" icon={<Scan size={16} />} label="Scan QR" />
+<SidebarItem
+  href="/admin/textiles/production/weaving-wip"
+  icon={<Gauge size={16} />}
+  label="Weaving WIP"
+  onClick={closeSidebar}
+  isActive={isActive("/admin/textiles/production/weaving-wip")}
+/>
+<SidebarItem
+  href="/admin/textiles/production/greige-folding"
+  icon={<Layers size={16} />}
+  label="Greige Folding"
+  onClick={closeSidebar}
+  isActive={isActive("/admin/textiles/production/greige-folding")}
+/>
+<SidebarItem
+  href="/admin/textiles/quality/defect-analytics"
+  icon={<ChartPie size={16} />}
+  label="Defect Analytics"
+  onClick={closeSidebar}
+  isActive={isActive("/admin/textiles/quality/defect-analytics")}
+/>
+<SidebarItem
+  href="/admin/textiles/costing"
+  icon={<IndianRupee size={16} />}
+  label="Production Costing"
+  onClick={closeSidebar}
+  isActive={isActive("/admin/textiles/costing")}
+/>
+<SidebarItem
+  href="/admin/textiles/mrp"
+  icon={<ShoppingCart size={16} />}
+  label="MRP"
+  onClick={closeSidebar}
+  isActive={isActive("/admin/textiles/mrp")}
+/>
+<SidebarItem
+  href="/admin/textiles/sales-order-integration"
+  icon={<ShoppingCart size={16} />}
+  label="Sales Order Integration"
+  onClick={closeSidebar}
+  isActive={isActive("/admin/textiles/sales-order-integration")}
+/>
+<SidebarItem
+  href="/admin/textiles/export-docs"
+  icon={<FileText size={16} />}
+  label="Export Docs"
+  onClick={closeSidebar}
+  isActive={isActive("/admin/textiles/export-docs")}
+/>
+<SidebarItem
+  href="/admin/textiles/inventory-valuation"
+  icon={<ChartLine size={16} />}
+  label="Inventory Valuation"
+  onClick={closeSidebar}
+  isActive={isActive("/admin/textiles/inventory-valuation")}
+/>
+<SidebarItem
+  href="/admin/textiles/supplier-performance"
+  icon={<Users size={16} />}
+  label="Supplier Performance"
+  onClick={closeSidebar}
+  isActive={isActive("/admin/textiles/supplier-performance")}
+/>
+<SidebarItem href="/admin/textiles/reports" icon={<BarChart size={16} />} label="Reports" />
+
+
+</Section>
 
                 <Section title="Helpdesk" icon={<HiUser />} isOpen={openMenu === "helpdesk"} onToggle={() => toggleMenu("helpdesk")}>
                   <SidebarItem href="/admin/helpdesk/tickets" icon={<HiDocumentText />} label="Tickets" onClick={closeSidebar} isActive={isActive("/admin/helpdesk/tickets")} />

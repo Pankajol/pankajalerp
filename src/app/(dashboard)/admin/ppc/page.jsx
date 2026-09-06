@@ -1,92 +1,18 @@
-"use client"
-import React from 'react';
-import {
-  Cog,
-  Users,
-  Wrench,
-  CalendarDays,
-  FileOutput,
-  GitMerge,
-  ClipboardList
-} from 'lucide-react';
+"use client";
 
-const cardSections = [
-  {
-    title: 'Production Orders',
-    href: '/production-orders',
-    description: 'Create, view, and manage all production orders.',
-    icon: ClipboardList,
-    color: 'text-blue-500'
-  },
-  {
-    title: 'Machines',
-    href: '/machines',
-    description: 'Manage all machinery and equipment.',
-    icon: Cog,
-    color: 'text-teal-500'
-  },
-  {
-    title: 'Operators',
-    href: '/operators',
-    description: 'Manage production operators and their details.',
-    icon: Users,
-    color: 'text-orange-500'
-  },
-  {
-    title: 'Resources',
-    href: '/resources',
-    description: 'Manage other production resources like tools.',
-    icon: Wrench,
-    color: 'text-purple-500'
-  },
-  {
-    title: 'Machine Outputs',
-    href: '/machine-outputs',
-    description: 'Define item output rates and costs per machine.',
-    icon: FileOutput,
-    color: 'text-red-500'
-  },
-  {
-    title: 'Operator Mappings',
-    href: '/operator-machine-mappings',
-    description: 'Assign operators to specific machines.',
-    icon: GitMerge,
-    color: 'text-yellow-500'
-  },
-  {
-    title: 'Holidays',
-    href: '/holidays',
-    description: 'Manage the holiday calendar for planning.',
-    icon: CalendarDays,
-    color: 'text-indigo-500'
-  }
+import Link from "next/link";
+import { useCallback, useEffect, useState } from "react";
+import { Activity, CalendarDays, ChevronRight, ClipboardList, Cog, Factory, FileOutput, Gauge, GitMerge, PackageCheck, RefreshCw, ShieldAlert, Users, Wrench } from "lucide-react";
+
+const modules = [
+  ["Production Orders", "productionOrderPage", "Plan, release and control manufacturing orders.", ClipboardList], ["Production Job Cards", "production-jobcards", "Run production, QC and delivery workflow.", Factory], ["Shop-floor Job Cards", "jobcards/jobcardlists", "Track operation-wise work and output.", Activity], ["Machines", "machinesPage", "Capacity, availability and equipment master.", Cog], ["Operators", "operatorsPage", "Operator skills and production allocation.", Users], ["Resources", "resourcesPage", "Manage production tools and resources.", Wrench], ["Machine Outputs", "machineOutputPage", "Maintain output rates and running costs.", FileOutput], ["Operator Mapping", "operatorMachineMappingPage", "Control machine/operator eligibility.", GitMerge], ["Downtime", "downtime", "Record losses and resolve production blocks.", ShieldAlert], ["Production Reports", "reports", "Monitor throughput, completion and utilisation.", Gauge], ["Holiday Calendar", "holidaysPage", "Keep production planning calendars accurate.", CalendarDays], ["Tyre Job Cards", "tyre-jobcards", "Manage tyre process and delivery tracking.", PackageCheck],
 ];
 
-const DashboardPage = () => {
-  return (
-    <div className="p-8 font-sans bg-gray-50 min-h-screen">
-      <header className="mb-10">
-        <h1 className="text-4xl font-bold text-gray-800">Production Planning Dashboard</h1>
-        <p className="text-lg text-gray-600 mt-2">Welcome! Select a module to begin.</p>
-      </header>
-      
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-        {cardSections.map((section) => (
-          <a href={section.href} key={section.title} className="text-current no-underline">
-            <div className="bg-white p-6 rounded-lg shadow-md hover:shadow-xl hover:-translate-y-1 transition-all duration-300 cursor-pointer flex items-start gap-4 h-full">
-              <div className={`p-3 bg-gray-100 rounded-full ${section.color}`}>
-                <section.icon size={24} />
-              </div>
-              <div>
-                <h2 className="text-xl font-bold text-gray-800 mb-1">{section.title}</h2>
-                <p className="text-gray-600">{section.description}</p>
-              </div>
-            </div>
-          </a>
-        ))}
-      </div>
-    </div>
-  );
-};
-
-export default DashboardPage;
+export default function PPCDashboardPage() {
+  const [data, setData] = useState(null), [error, setError] = useState(""), [loading, setLoading] = useState(true), [seeding, setSeeding] = useState(false);
+  const load = useCallback(async () => { try { setLoading(true); setError(""); const token = localStorage.getItem("token"); const res = await fetch("/api/ppc/dashboard", { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" }); const json = await res.json(); if (!res.ok || !json.success) throw new Error(json.message || "Unable to load PPC dashboard"); setData(json.data); } catch (e) { setError(e.message); } finally { setLoading(false); } }, []);
+  useEffect(() => { load(); }, [load]);
+  const loadDemoData = async () => { if (!window.confirm("Load five linked demo records into each core PPC area?")) return; try { setSeeding(true); const token = localStorage.getItem("token"); const res = await fetch("/api/ppc/demo-data", { method: "POST", headers: { Authorization: `Bearer ${token}` } }); const json = await res.json(); if (!res.ok || !json.success) throw new Error(json.message || "Unable to load demo data"); await load(); alert(json.message); } catch (e) { setError(e.message); } finally { setSeeding(false); } };
+  const stats = data ? [["Open orders", (data.productionOrders.pending || 0) + (data.productionOrders.inProgress || 0), ClipboardList], ["Completed orders", data.productionOrders.completed || 0, PackageCheck], ["Production job cards", data.jobCards.total || 0, Factory], ["Active operators", `${data.operators.active || 0}/${data.operators.total || 0}`, Users]] : [];
+  return <main className="min-h-screen bg-slate-50 p-5 sm:p-8"><div className="mx-auto max-w-7xl"><header className="mb-7 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between"><div><p className="text-xs font-bold uppercase tracking-[.2em] text-blue-600">Production planning & control</p><h1 className="mt-1 text-3xl font-extrabold text-slate-900">Shop-floor control centre</h1><p className="mt-2 text-sm text-slate-500">Plan work, execute job cards, manage exceptions and monitor performance.</p></div><div className="flex gap-2"><button onClick={loadDemoData} disabled={seeding} className="rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm disabled:opacity-60">{seeding ? "Loading…" : "Load 5 demo records"}</button><button onClick={load} disabled={loading} className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm"><RefreshCw size={16} className={loading ? "animate-spin" : ""}/>Refresh</button></div></header>{error && <div className="mb-5 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</div>}<section className="mb-7 grid grid-cols-2 gap-3 lg:grid-cols-4">{loading ? [1,2,3,4].map(i => <div key={i} className="h-28 animate-pulse rounded-2xl bg-slate-200"/>) : stats.map(([label, value, Icon]) => <div key={label} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><Icon size={19} className="mb-4 text-blue-600"/><p className="text-2xl font-extrabold text-slate-900">{value}</p><p className="mt-1 text-xs font-semibold uppercase text-slate-500">{label}</p></div>)}</section><section className="mb-7 grid gap-4 lg:grid-cols-3"><Link href="/admin/ppc/productionOrderPage" className="rounded-2xl bg-gradient-to-br from-blue-700 to-indigo-700 p-6 text-white shadow-lg"><p className="text-xs font-bold uppercase tracking-widest text-blue-200">Next action</p><h2 className="mt-2 text-xl font-bold">Create or release a production order</h2><p className="mt-2 text-sm text-blue-100">Start with a controlled order before creating job cards.</p></Link><Link href="/admin/ppc/production-jobcards" className="rounded-2xl border border-amber-200 bg-amber-50 p-6"><p className="text-xs font-bold uppercase tracking-widest text-amber-700">Execution queue</p><h2 className="mt-2 text-xl font-bold text-slate-900">Run production job cards</h2><p className="mt-2 text-sm text-slate-600">Update floor progress, QC and completed work.</p></Link><Link href="/admin/ppc/downtime" className="rounded-2xl border border-red-200 bg-red-50 p-6"><p className="text-xs font-bold uppercase tracking-widest text-red-700">Exception management</p><h2 className="mt-2 text-xl font-bold text-slate-900">Record machine downtime</h2><p className="mt-2 text-sm text-slate-600">Capture losses quickly so planning can respond.</p></Link></section><section><div className="mb-4 flex items-center justify-between"><h2 className="text-lg font-bold text-slate-900">PPC workspace</h2><span className="text-xs text-slate-500">Choose an area to continue</span></div><div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{modules.map(([title, path, description, Icon]) => <Link href={`/admin/ppc/${path}`} key={title} className="group rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-md"><div className="flex gap-4"><span className="rounded-xl bg-blue-50 p-3 text-blue-600"><Icon size={21}/></span><div className="min-w-0 flex-1"><div className="flex items-center justify-between gap-2"><h3 className="font-bold text-slate-900">{title}</h3><ChevronRight size={17} className="text-slate-300 group-hover:text-blue-600"/></div><p className="mt-1.5 text-sm leading-5 text-slate-500">{description}</p></div></div></Link>)}</div></section></div></main>;
+}

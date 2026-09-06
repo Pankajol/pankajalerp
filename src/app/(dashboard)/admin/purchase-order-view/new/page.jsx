@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import axios from "axios";
+import ProtectedPage from "@/components/ProtectedPage";
 import DatePicker from "react-datepicker";
 import "react-datepicker/dist/react-datepicker.css";
 import ItemSection from "@/components/ItemSection";
@@ -94,9 +95,11 @@ const getVariantImageUrl = (item, variantSku) => {
 // ─────────────────────────────────────────────────────────────────
 export default function OrderFormWrapper() {
   return (
-    <Suspense fallback={<div className="p-10 text-center text-gray-400">Loading form...</div>}>
-      <OrderForm />
-    </Suspense>
+    <ProtectedPage module="PurchaseOrder" action="create">
+      <Suspense fallback={<div className="p-10 text-center text-gray-400">Loading form...</div>}>
+        <OrderForm />
+      </Suspense>
+    </ProtectedPage>
   );
 }
 

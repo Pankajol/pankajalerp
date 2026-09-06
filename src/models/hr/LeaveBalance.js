@@ -12,7 +12,6 @@ const LeaveBalanceSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "Employee", // ✅ FIXED
       required: true,
-      unique: true,
     },
 
     casual: { type: Number, default: 12 },
@@ -22,6 +21,8 @@ const LeaveBalanceSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+
+LeaveBalanceSchema.index({ companyId: 1, employeeId: 1 }, { unique: true });
 
 export default mongoose.models.LeaveBalance ||
   mongoose.model("LeaveBalance", LeaveBalanceSchema);

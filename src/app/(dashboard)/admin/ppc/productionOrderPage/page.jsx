@@ -1,13 +1,16 @@
 "use client";
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { Plus, Edit, Trash2 } from 'lucide-react';
 
 const ProductionOrderPage = () => {
+  const router = useRouter();
   const [productionOrders, setProductionOrders] = useState([]);
   const [machines, setMachines] = useState([]);
   const [operators, setOperators] = useState([]);
   const [resources, setResources] = useState([]);
+  const [designs, setDesigns] = useState([]);
 
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -16,6 +19,7 @@ const ProductionOrderPage = () => {
   
   const [isSaving, setIsSaving] = useState(false);
   const [modalError, setModalError] = useState(null);
+  const [isLoadingDemo, setIsLoadingDemo] = useState(false);
 
   const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
 
@@ -25,27 +29,31 @@ const ProductionOrderPage = () => {
     setError(null);
     try {
       const headers = { 'Authorization': `Bearer ${token}` };
-      const [ordersRes, machinesRes, operatorsRes, resourcesRes] = await Promise.all([
+      const [ordersRes, machinesRes, operatorsRes, resourcesRes, designsRes] = await Promise.all([
         fetch('/api/ppc/production-orders', { headers }),
         fetch('/api/ppc/machines', { headers }),
         fetch('/api/ppc/operators', { headers }),
-        fetch('/api/ppc/resources', { headers })
+        fetch('/api/ppc/resources', { headers }),
+        fetch('/api/textiles/designs?status=active', { headers })
       ]);
 
       if (!ordersRes.ok) throw new Error('Failed to fetch production orders');
       if (!machinesRes.ok) throw new Error('Failed to fetch machines');
       if (!operatorsRes.ok) throw new Error('Failed to fetch operators');
       if (!resourcesRes.ok) throw new Error('Failed to fetch resources');
+      if (!designsRes.ok) throw new Error('Failed to fetch designs');
 
       const ordersData = await ordersRes.json();
       const machinesData = await machinesRes.json();
       const operatorsData = await operatorsRes.json();
       const resourcesData = await resourcesRes.json();
+      const designsData = await designsRes.json();
       
       setProductionOrders(ordersData.data || []);
       setMachines(machinesData.data || []);
       setOperators(operatorsData.data || []);
       setResources(resourcesData.data || []);
+      setDesigns(designsData.data || []);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -58,12 +66,13 @@ const ProductionOrderPage = () => {
   }, [fetchData]);
 
   const openModal = (order = null) => {
-    setCurrentOrder(order ? { ...order } : { 
+    setCurrentOrder(order ? { ...order, design: order.design?._id || order.design || "" } : { 
       orderNumber: '',
       itemCode: '',
       itemName: '',
       quantity: '',
       status: 'Pending',
+      design: '',
       assignedMachine: machines[0]?._id || '',
       assignedOperator: operators[0]?._id || '',
       assignedResource: resources[0]?._id || '',
@@ -84,14 +93,14 @@ const ProductionOrderPage = () => {
   };
 
   const handleSave = async () => {
-    if (!currentOrder.orderNumber || !currentOrder.itemCode || !currentOrder.quantity) {
-        setModalError("Order Number, Item Code, and Quantity are required.");
+    if (!currentOrder.orderNumber || !currentOrder.itemCode || !currentOrder.quantity || !currentOrder.design) {
+        setModalError("Order Number, Item Code, Design, and Quantity are required.");
         return;
     }
     setIsSaving(true);
     setModalError(null);
     const method = currentOrder._id ? 'PUT' : 'POST';
-    const url = currentOrder._id ? `/api/ppc/production-orders/${currentOrder._id}` : '/api/ppc/production-orders';
+    const url = currentOrder._id ? `/api/ppc/production-orders?id=${currentOrder._id}` : '/api/ppc/production-orders';
 
     try {
       const response = await fetch(url, {
@@ -118,7 +127,7 @@ const ProductionOrderPage = () => {
   const handleDelete = async (id) => {
     if (window.confirm('Are you sure you want to delete this production order?')) {
       try {
-        const response = await fetch(`/api/ppc/production-orders/${id}`, { 
+        const response = await fetch(`/api/ppc/production-orders?id=${id}`, { 
           method: 'DELETE',
           headers: { 'Authorization': `Bearer ${token}` }
         });
@@ -131,6 +140,16 @@ const ProductionOrderPage = () => {
         setError(err.message);
       }
     }
+  };
+
+  const loadDemoData = async () => {
+    try {
+      setIsLoadingDemo(true);
+      const response = await fetch('/api/ppc/demo-data', { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
+      const result = await response.json();
+      if (!response.ok || !result.success) throw new Error(result.message || 'Failed to load demo data');
+      await fetchData();
+    } catch (err) { setError(err.message); } finally { setIsLoadingDemo(false); }
   };
 
   return (
@@ -156,6 +175,7 @@ const ProductionOrderPage = () => {
               <tr>
                 <th className="p-4">Order #</th>
                 <th className="p-4">Item Name</th>
+                <th className="p-4">Design</th>
                 <th className="p-4">Quantity</th>
                 <th className="p-4">Status</th>
                 <th className="p-4">Machine</th>
@@ -164,10 +184,12 @@ const ProductionOrderPage = () => {
               </tr>
             </thead>
             <tbody>
+              {productionOrders.length === 0 && <tr><td colSpan={8} className="p-12 text-center"><p className="font-semibold text-gray-800">No production orders yet</p><p className="mt-1 text-sm text-gray-500">Load five linked demo records to test the complete PPC workflow.</p><button onClick={loadDemoData} disabled={isLoadingDemo} className="mt-4 rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-60">{isLoadingDemo ? 'Loading demo data...' : 'Load 5 demo records'}</button></td></tr>}
               {productionOrders.map((order) => (
                 <tr key={order._id} className="border-b hover:bg-gray-50">
                   <td className="p-4 font-medium">{order.orderNumber}</td>
                   <td className="p-4">{order.itemName}</td>
+                  <td className="p-4">{order.design?.designCode || 'N/A'}</td>
                   <td className="p-4">{order.quantity}</td>
                   <td className="p-4">
                     <span className={`px-2 py-1 text-xs font-semibold rounded-full ${
@@ -181,6 +203,7 @@ const ProductionOrderPage = () => {
                   <td className="p-4">{order.assignedMachine?.name || 'N/A'}</td>
                   <td className="p-4">{order.assignedOperator?.name || 'N/A'}</td>
                   <td className="p-4 flex gap-2">
+                    <button onClick={() => router.push(`/admin/ppc/productionOrderPage/${order._id}/jobcards`)} className="rounded bg-indigo-600 px-3 py-1 text-xs font-semibold text-white hover:bg-indigo-700">Open Job Cards</button>
                     <button onClick={() => openModal(order)} className="text-blue-500 hover:text-blue-700"><Edit size={18} /></button>
                     <button onClick={() => handleDelete(order._id)} className="text-red-500 hover:text-red-700"><Trash2 size={18} /></button>
                   </td>
@@ -202,6 +225,10 @@ const ProductionOrderPage = () => {
               <input name="orderNumber" type="text" placeholder="Order Number" value={currentOrder.orderNumber} onChange={handleInputChange} className="w-full p-2 border rounded-md" />
               <input name="itemCode" type="text" placeholder="Item Code" value={currentOrder.itemCode} onChange={handleInputChange} className="w-full p-2 border rounded-md" />
               <input name="itemName" type="text" placeholder="Item Name" value={currentOrder.itemName} onChange={handleInputChange} className="w-full p-2 border rounded-md" />
+              <select name="design" value={currentOrder.design?._id || currentOrder.design || ''} onChange={handleInputChange} className="w-full p-2 border rounded-md bg-white">
+                <option value="">Select Design *</option>
+                {designs.map((design) => <option key={design._id} value={design._id}>{design.designCode} - {design.description}</option>)}
+              </select>
               <input name="quantity" type="number" placeholder="Quantity" value={currentOrder.quantity} onChange={handleInputChange} className="w-full p-2 border rounded-md" />
               <select name="status" value={currentOrder.status} onChange={handleInputChange} className="w-full p-2 border rounded-md bg-white">
                 <option value="Pending">Pending</option>

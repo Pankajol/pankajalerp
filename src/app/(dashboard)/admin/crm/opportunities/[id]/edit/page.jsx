@@ -1,9 +1,15 @@
 import { Suspense } from "react";
 import OpportunityForm from "@/components/crm/OpportunityForm"; // adjust path as needed
+import {useAuth} from "@/context/AuthContext";
+import ProtectedPage from "@/components/ProtectedPage";
 
 async function EditOpportunityContent({ params }) {
   const { id } = await params;
-  return <OpportunityForm opportunityId={id} />;
+  return (
+    <ProtectedPage permission="Opportunity" action="edit">
+      <OpportunityForm opportunityId={id} />
+    </ProtectedPage>
+  );
 }
 
 export default function EditOpportunityPage({ params }) {

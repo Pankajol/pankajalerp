@@ -2,7 +2,10 @@
 
 import { useState, useEffect, useMemo, useCallback } from "react";
 import axios from "axios";
+import { useAuth } from "@/context/AuthContext";
 import Link from "next/link";
+import ProtectedPage from "@/components/ProtectedPage";
+
 import { useRouter } from "next/navigation";
 import { toast } from "react-toastify";
 import {
@@ -22,6 +25,7 @@ export default function OpportunityListPage() {
   const [search, setSearch] = useState("");
   const [filterStage, setFilterStage] = useState("All");
   const router = useRouter();
+ const { can } = useAuth();
 
   const fetchOpportunities = useCallback(async () => {
     setLoading(true);
@@ -88,6 +92,7 @@ export default function OpportunityListPage() {
   };
 
   return (
+     <ProtectedPage module="Opportunity" action="view">
     <div className="min-h-screen bg-gray-50">
       <div className="max-w-screen-xl mx-auto px-4 sm:px-6 py-6">
         {/* Header */}
@@ -103,11 +108,19 @@ export default function OpportunityListPage() {
               </span>
             </p>
           </div>
-          <Link href="/admin/crm/OpportunityDetailsForm">
+          {can("Opportunity", "create") && (
+            <Link href="/admin/crm/opportunities/opportunityDetailsForm">
+              <button className="flex items-center gap-2 px-3.5 py-2 rounded-lg bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 transition-all shadow-sm shadow-indigo-200">
+                <FaPlus className="text-xs" /> New Opportunity
+              </button>
+            </Link>
+          )}
+
+          {/* <Link href="/admin/crm/OpportunityDetailsForm">
             <button className="flex items-center gap-2 px-3.5 py-2 rounded-lg bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 transition-all shadow-sm shadow-indigo-200">
               <FaPlus className="text-xs" /> New Opportunity
-            </button>
-          </Link>
+            </button> 
+          </Link> */}   
         </div>
 
         {/* Stat Cards */}
@@ -249,6 +262,7 @@ export default function OpportunityListPage() {
         </div>
       </div>
     </div>
+    </ProtectedPage>
   );
 }
 
@@ -291,32 +305,55 @@ function OpportunityCard({ data, idx, onDelete }) {
 
 function OpportunityActions({ data, onDelete }) {
   const router = useRouter();
+  const { can } = useAuth();
 
-  const actions = [
-    {
+  const actions = [];
+
+  // View
+  if (can("Opportunity", "view")) {
+    actions.push({
       icon: <FaEye />,
       label: "View Deal",
-      // ✅ Use singular route (matches your detail page)
-      onClick: () => router.push(`/admin/crm/opportunities/${data._id}`),
-    },
-    {
+      onClick: () =>
+        router.push(`/admin/crm/opportunities/${data._id}`),
+    });
+  }
+
+  // Edit
+  if (can("Opportunity", "edit")) {
+    actions.push({
       icon: <FaEdit />,
       label: "Edit Deal",
-      // ✅ Use singular route + /edit
-      onClick: () => router.push(`/admin/crm/opportunities/${data._id}/edit`),
-    },
-    {
+      onClick: () =>
+        router.push(`/admin/crm/opportunities/${data._id}/edit`),
+    });
+  }
+
+  // Analytics
+  if (can("Opportunity", "view")) {
+    actions.push({
       icon: <FaChartLine />,
       label: "View Analytics",
-      onClick: () => {},
-    },
-    {
+      onClick: () =>
+        router.push(`/admin/crm/opportunities/${data._id}/analytics`),
+    });
+  }
+
+  // Delete
+  if (can("Opportunity", "delete")) {
+    actions.push({
       icon: <FaTrash />,
       label: "Delete",
       color: "text-red-600",
       onClick: () => onDelete(data._id),
-    },
-  ];
+    });
+  }
+
+  // If user has no permission
+  if (actions.length === 0) {
+    return null;
+  }
+
   return <ActionMenu actions={actions} />;
 }
 

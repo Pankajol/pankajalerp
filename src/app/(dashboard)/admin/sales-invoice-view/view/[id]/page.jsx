@@ -3,6 +3,7 @@
 import React, { useEffect, useState, Suspense } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import axios from 'axios';
+import ProtectedPage from "@/components/ProtectedPage";
 import { 
   FaArrowLeft, FaUser, FaCalendarAlt, FaBoxOpen, 
   FaCalculator, FaPaperclip, FaInfoCircle, FaFilePdf, 
@@ -105,9 +106,11 @@ const getItemImageUrl = (item) => {
 // ──────────────────────────────────────────────────────────────
 export default function SalesInvoiceViewWrapper() {
   return (
-    <Suspense fallback={<div className="min-h-screen flex items-center justify-center">Loading Invoice...</div>}>
-      <SalesInvoiceView />
-    </Suspense>
+    <ProtectedPage module="SalesInvoice" action="view">
+      <Suspense fallback={<div className="min-h-screen flex items-center justify-center">Loading Invoice...</div>}>
+        <SalesInvoiceView />
+      </Suspense>
+    </ProtectedPage>
   );
 }
 

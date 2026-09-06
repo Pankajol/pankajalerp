@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useMemo, useCallback } from "react";
 import Link from "next/link";
+import ProtectedPage from "@/components/ProtectedPage";
+import {useAuth} from "@/context/AuthContext";
 import axios from "axios";
 import { useRouter } from "next/navigation";
 import { toast } from "react-toastify";
@@ -27,6 +29,7 @@ export default function PurchaseOrderList() {
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
   const router = useRouter();
+  const { can } = useAuth();
 
   const fetchOrders = useCallback(async () => {
     setLoading(true);
@@ -148,11 +151,11 @@ const handleCopyTo = (order, destination) => {
             <h1 className="text-2xl font-extrabold tracking-tight text-gray-900">Purchase Orders</h1>
             <p className="text-sm text-gray-400 mt-0.5">Manage procurement and supplier orders</p>
           </div>
-          <Link href="/admin/purchase-order-view/new">
-            <button className="flex items-center gap-2 px-3.5 py-2 rounded-lg bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 transition-all shadow-sm">
-              <FaPlus className="text-xs" /> New Order
-            </button>
+        {  can("PurchaseOrder", "create") && (
+          <Link href="/admin/purchase-order-view/new" className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-semibold transition">
+            <FaPlus className="text-xs" /> New Purchase Order
           </Link>
+        )}
         </div>
 
         {/* Stat Cards */}
@@ -359,27 +362,98 @@ const handleCopyTo = (order, destination) => {
   );
 }
 
+
+
 function RowMenu({ order, onDelete, onCopy }) {
   const router = useRouter();
+  const { can } = useAuth();
 
   const handleEmail = async () => {
     try {
-      const res = await axios.post("/api/email", { type: "purchase-order", id: order._id });
-      if (res.data.success) toast.success("Email sent successfully!");
-      else toast.error(res.data.message || "Failed to send email.");
-    } catch {
+      const token = localStorage.getItem("token");
+
+      const res = await axios.post(
+        "/api/email",
+        {
+          type: "purchase-order",
+          id: order._id,
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      if (res.data.success) {
+        toast.success("Email sent successfully!");
+      } else {
+        toast.error(res.data.message || "Failed to send email.");
+      }
+    } catch (error) {
+      console.error(error);
       toast.error("Error sending email.");
     }
   };
 
-  const actions = [
-    { icon: <FaEye />, label: "View Order", onClick: () => router.push(`/admin/purchase-order-view/view/${order._id}`) },
-    { icon: <FaEdit />, label: "Edit Order", onClick: () => router.push(`/admin/purchase-order-view/new?editId=${order._id}`) },
-    { icon: <FaCopy />, label: "Copy → GRN", onClick: () => onCopy(order, "GRN") },
-    { icon: <FaCopy />, label: "Copy → Invoice", onClick: () => onCopy(order, "Invoice") },
-    { icon: <FaEnvelope />, label: "Email PDF", onClick: handleEmail },
-    { icon: <FaTrash />, label: "Delete", color: "text-red-600", onClick: () => onDelete(order._id) },
-  ];
+  const actions = [];
+
+  // View
+  if (can("Purchase Order", "view")) {
+    actions.push({
+      icon: <FaEye />,
+      label: "View Order",
+      onClick: () =>
+        router.push(`/admin/purchase-order-view/view/${order._id}`),
+    });
+  }
+
+  // Edit
+  if (can("Purchase Order", "edit")) {
+    actions.push({
+      icon: <FaEdit />,
+      label: "Edit Order",
+      onClick: () =>
+        router.push(`/admin/purchase-order-view/new?editId=${order._id}`),
+    });
+  }
+
+  // Copy → GRN
+  if (can("Purchase Order", "copy")) {
+    actions.push({
+      icon: <FaCopy />,
+      label: "Copy → GRN",
+      onClick: () => onCopy(order, "GRN"),
+    });
+  }
+
+  // Copy → Invoice
+  if (can("Purchase Order", "copy")) {
+    actions.push({
+      icon: <FaCopy />,
+      label: "Copy → Invoice",
+      onClick: () => onCopy(order, "Invoice"),
+    });
+  }
+
+  // Email
+  if (can("Purchase Order", "email")) {
+    actions.push({
+      icon: <FaEnvelope />,
+      label: "Email PDF",
+      onClick: handleEmail,
+    });
+  }
+
+  // Delete
+  if (can("Purchase Order", "delete")) {
+    actions.push({
+      icon: <FaTrash />,
+      label: "Delete",
+      color: "text-red-600",
+      onClick: () => onDelete(order._id),
+    });
+  }
 
   return <ActionMenu actions={actions} />;
 }

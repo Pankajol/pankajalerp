@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
+import ProtectedPage from '@/components/ProtectedPage';
 import autoTable from 'jspdf-autotable';
 
 import {
@@ -111,6 +112,7 @@ export default function SalesReportPage() {
   };
 
   return (
+    <ProtectedPage module="SalesReport" action="view">
     <div className="p-6">
       <h1 className="text-3xl font-bold mb-6">Sales Report</h1>
 
@@ -182,5 +184,6 @@ export default function SalesReportPage() {
         Total Sales: ₹{totalSales}
       </div>
     </div>
+    </ProtectedPage>
   );
 }

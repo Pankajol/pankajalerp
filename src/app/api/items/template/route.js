@@ -1,51 +1,163 @@
 import { NextResponse } from "next/server";
-import Item from "@/models/ItemModels";
-import dbConnect from "@/lib/db";
+import { getTokenFromHeader, verifyJWT } from "@/lib/auth";
 
-// 🧠 Function to extract CSV headers and sample data from schema
-function extractTemplateFromModel(schema) {
-  const headers = [];
-  const sample = [];
+const columns = [
+  "itemCode",
+  "itemName",
+  "category",
+  "itemGroup",
+  "itemType",
+  "unitPrice",
+  "salesPrice",
+  "mrp",
+  "quantity",
+  "stockQuantity",
+  "reorderLevel",
+  "leadTime",
+  "unit",
+  "uom",
+  "stockUom",
+  "brand",
+  "hsnCode",
+  "defaultWarehouse",
+  "manufacturer",
+  "gstRate",
+  "cgstRate",
+  "sgstRate",
+  "igstRate",
+  "includeGST",
+  "includeIGST",
+  "status",
+  "description",
+  "imageUrl",
+  "isStockItem",
+  "inStock",
+  "batchRequired",
+  "hasVariants",
+  "rollTrackingEnabled",
+  "isTextile",
+  "textileItemType",
+  "yarnType",
+  "countSystem",
+  "count",
+  "denier",
+  "ply",
+  "twist",
+  "coneWeight",
+  "compositionTemplate",
+  "fabricType",
+  "construction",
+  "gsm",
+  "finishedWidth",
+  "widthUom",
+  "greyWidth",
+  "finish",
+  "design",
+  "color",
+  "shade",
+  "chemicalType",
+  "concentration",
+  "hazardClass",
+  "storageInstructions",
+  "packingType",
+  "packingDimensions",
+  "materialGrade",
+  "packingCapacity",
+  "tags",
+];
 
-  for (const [key, field] of Object.entries(schema.paths)) {
-    // Exclude internal fields
-    if (["_id", "__v", "companyId", "createdBy", "itemCode", "createdAt", "updatedAt"].includes(key)) continue;
+const example = [
+  "",
+  "Cotton Fiber",
+  "Raw Material",
+  "Natural Fiber",
+  "Raw Material",
+  "125.00",
+  "150.00",
+  "175.00",
+  "100",
+  "100",
+  "20",
+  "7",
+  "kg",
+  "KG",
+  "KG",
+  "",
+  "5201",
+  "Main Warehouse",
+  "",
+  "5",
+  "2.5",
+  "2.5",
+  "5",
+  "true",
+  "false",
+  "active",
+  "Natural cotton fiber for textile composition",
+  "",
+  "true",
+  "true",
+  "true",
+  "false",
+  "false",
+  "true",
+  "Raw Material",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "Natural",
+  "White",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "cotton;fiber;natural",
+];
 
-    headers.push(key);
+const csvCell = (value) => `"${String(value ?? "").replaceAll('"', '""')}"`;
 
-    // Example sample values
-    if (key === "itemName") sample.push("Cement Bag");
-    else if (key === "category") sample.push("Construction");
-    else if (key === "unitPrice") sample.push("350.00");
-    else if (key === "hsnCode") sample.push("2523");
-    else if (key === "gstRate") sample.push("18");
-    else if (key === "unitOfMeasure") sample.push("BAG");
-    else if (key === "status") sample.push("active");
-    else if (key === "description") sample.push("High-quality cement bag for building.");
-    else sample.push("");
+export async function GET(req) {
+  const user = verifyJWT(getTokenFromHeader(req));
+  if (!user) {
+    return NextResponse.json(
+      { success: false, message: "Unauthorized" },
+      { status: 401 }
+    );
   }
 
-  return { headers, sample };
-}
-
-export async function GET() {
-  await dbConnect();
-
   try {
-    const { headers, sample } = extractTemplateFromModel(Item.schema);
-
-    const csvContent = [headers.join(","), sample.join(",")].join("\n");
-
-    return new NextResponse(csvContent, {
+    const csv = [columns, example]
+      .map((row) => row.map(csvCell).join(","))
+      .join("\r\n");
+    return new NextResponse(`\uFEFF${csv}`, {
       headers: {
-        "Content-Type": "text/csv",
-        "Content-Disposition": "attachment; filename=item_bulk_upload_template.csv",
+        "Content-Type": "text/csv; charset=utf-8",
+        "Content-Disposition":
+          'attachment; filename="item_bulk_upload_template.csv"',
+        "Cache-Control": "no-store",
       },
     });
-  } catch (err) {
-    console.error("Error generating template:", err);
+  } catch (error) {
+    console.error("Error generating item template:", error);
     return NextResponse.json(
-      { success: false, message: "Failed to generate template" },
+      { success: false, message: "Failed to generate item template" },
       { status: 500 }
     );
   }

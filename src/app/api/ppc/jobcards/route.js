@@ -75,10 +75,10 @@ export async function POST(req) {
       return NextResponse.json({ error: "Invalid token" }, { status: 401 });
 
     // 🧾 Parse body
-    const { productionOrderId, operations } = await req.json();
-    if (!productionOrderId || !operations?.length)
+    const { productionOrderId, operations: requestedOperations } = await req.json();
+    if (!productionOrderId)
       return NextResponse.json(
-        { error: "productionOrderId and operations are required" },
+        { error: "productionOrderId is required" },
         { status: 400 }
       );
 
@@ -92,6 +92,16 @@ export async function POST(req) {
         { error: "Production order not found" },
         { status: 404 }
       );
+
+    const operations = requestedOperations?.length
+      ? requestedOperations
+      : (order.operationFlow || []).map(flow => ({
+          operationId: flow.operation?._id?.toString() || flow.operation?.toString(),
+          qtyToManufacture: order.quantity,
+          expectedStartDate: flow.expectedStartDate,
+          expectedEndDate: flow.expectedEndDate,
+        }));
+    if (!operations.length) return NextResponse.json({ error: "Add at least one process step before generating job cards" }, { status: 400 });
 
     // 🧩 Build job cards
     const jobCardsToCreate = operations
@@ -118,7 +128,7 @@ export async function POST(req) {
           remainingQty: qty, // ✅ Initially same as allowedQty
           completedQty: 0, // ✅ Initially 0
           jobCardNo: `JC-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-          createdBy: user._id,
+          createdBy: user.id || user._id,
           status: "Planned", // ✅ Default status
           timeLogs: [], // ✅ Initialize empty
         };

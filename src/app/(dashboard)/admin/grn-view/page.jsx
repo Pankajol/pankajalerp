@@ -3,6 +3,8 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import Link from "next/link";
 import axios from "axios";
+import ProtectedPage from "@/components/ProtectedPage";
+import { useAuth } from "@/context/AuthContext";
 import { useRouter } from "next/navigation";
 import { toast } from "react-toastify";
 import ActionMenu from "@/components/ActionMenu";
@@ -26,6 +28,7 @@ export default function GRNList() {
   const [search, setSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState("All");
   const router = useRouter();
+  const { can } = useAuth();
 
   // Pagination state
   const [page, setPage] = useState(1);
@@ -196,6 +199,7 @@ export default function GRNList() {
   };
 
   return (
+    <ProtectedPage module="GRN" action="view">
     <div className="min-h-screen bg-gray-50">
       <div className="max-w-screen-xl mx-auto px-4 sm:px-6 py-6">
         
@@ -205,11 +209,13 @@ export default function GRNList() {
             <h1 className="text-2xl font-extrabold tracking-tight text-gray-900">Goods Receipt Notes</h1>
             <p className="text-sm text-gray-400 mt-0.5">{stats.total} total receipts recorded</p>
           </div>
-          <Link href="/admin/grn-view/new">
-            <button className="flex items-center gap-2 px-3.5 py-2 rounded-lg bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 transition-all shadow-sm">
-              <FaPlus className="text-xs" /> New GRN
-            </button>
-          </Link>
+          {can("GRN", "create") && (
+            <Link href="/admin/grn-view/new">
+              <button className="flex items-center gap-2 px-3.5 py-2 rounded-lg bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 transition-all shadow-sm">
+                <FaPlus className="text-xs" /> New GRN
+              </button>
+            </Link>
+          )}
         </div>
 
         {/* Stat Cards */}
@@ -420,30 +426,92 @@ export default function GRNList() {
       </div>
       <style>{`@keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}`}</style>
     </div>
+    </ProtectedPage>
   );
 }
 
+
 function RowMenu({ grn, onDelete, onCopy, onPrint }) {
   const router = useRouter();
+  const { can } = useAuth();
+
+  const permissions = {
+    view: can("GRN", "view"),
+    edit: can("GRN", "edit"),
+    copy: can("GRN", "copy"),
+    email: can("GRN", "email"),
+    print: can("GRN", "print"),
+    delete: can("GRN", "delete"),
+  };
 
   const handleEmail = async () => {
     try {
-      const res = await axios.post("/api/email", { type: "grn", id: grn._id });
-      if (res.data.success) toast.success("Email sent successfully!");
-      else toast.error(res.data.message || "Failed to send email.");
-    } catch {
+      const token = localStorage.getItem("token");
+
+      const res = await axios.post(
+        "/api/email",
+        {
+          type: "grn",
+          id: grn._id,
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      if (res.data.success) {
+        toast.success("Email sent successfully!");
+      } else {
+        toast.error(res.data.message || "Failed to send email.");
+      }
+    } catch (error) {
+      console.error(error);
       toast.error("Error sending email.");
     }
   };
 
   const actions = [
-    { icon: <FaEye />, label: "View Receipt", onClick: () => router.push(`/admin/grn-view/view/${grn._id}`) },
-    { icon: <FaEdit />, label: "Edit Record", onClick: () => router.push(`/admin/grn-view/new?editId=${grn._id}`) },
-    { icon: <FaCopy />, label: "Copy → Invoice", onClick: () => onCopy(grn) },
-    { icon: <FaEnvelope />, label: "Email PDF", onClick: handleEmail },
-    { icon: <FaPrint />, label: "Print GRN", onClick: () => onPrint(grn._id) },
-    { icon: <FaTrash />, label: "Delete", color: "text-red-600", onClick: () => onDelete(grn._id) },
-  ];
+    permissions.view && {
+      icon: <FaEye />,
+      label: "View Receipt",
+      onClick: () =>
+        router.push(`/admin/grn-view/view/${grn._id}`),
+    },
+
+    permissions.edit && {
+      icon: <FaEdit />,
+      label: "Edit Record",
+      onClick: () =>
+        router.push(`/admin/grn-view/new?editId=${grn._id}`),
+    },
+
+    permissions.copy && {
+      icon: <FaCopy />,
+      label: "Copy → Invoice",
+      onClick: () => onCopy(grn),
+    },
+
+    permissions.email && {
+      icon: <FaEnvelope />,
+      label: "Email PDF",
+      onClick: handleEmail,
+    },
+
+    permissions.print && {
+      icon: <FaPrint />,
+      label: "Print GRN",
+      onClick: () => onPrint(grn._id),
+    },
+
+    permissions.delete && {
+      icon: <FaTrash />,
+      label: "Delete",
+      color: "text-red-600",
+      onClick: () => onDelete(grn._id),
+    },
+  ].filter(Boolean);
 
   return <ActionMenu actions={actions} />;
 }

@@ -35,7 +35,12 @@ async function parseMultipart(req) {
 
 // Auth helpers (same as in route.js)
 function isAuthorized(user) {
-  return user?.type === "company" || user?.role === "Admin" || user?.permissions?.includes("supplier");
+  if (!user) return false;
+  if (user.type === "company" || user.role === "Admin" || user.role === "admin") return true;
+  const roles = Array.isArray(user.roles) ? user.roles : [];
+  if (roles.some(role => ["Admin", "admin", "masters", "Purchase Manager"].includes(role))) return true;
+  if (user.permissions?.includes("supplier")) return true;
+  return Boolean(user.modules?.Suppliers?.selected);
 }
 
 async function validateUser(req) {

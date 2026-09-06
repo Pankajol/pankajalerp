@@ -4,6 +4,7 @@ import Link from "next/link";
 import axios from "axios";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import ProtectedPage from "@/components/ProtectedPage";
 import {
   FaArrowLeft, FaEdit, FaUser, FaCalendarAlt,
   FaBoxOpen, FaCalculator, FaPaperclip, FaMapMarkerAlt
@@ -94,8 +95,9 @@ export default function SalesInvoiceDetail() {
   if (!invoice) return null;
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6">
+    <ProtectedPage module="SalesInvoice" action="view">
+      <div className="min-h-screen bg-gray-50">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6">
 
         {/* Header */}
         <button onClick={() => router.push("/admin/sales-invoice-view")}
@@ -319,6 +321,7 @@ export default function SalesInvoiceDetail() {
         </div>
       </div>
     </div>
+    </ProtectedPage>
   );
 }
 

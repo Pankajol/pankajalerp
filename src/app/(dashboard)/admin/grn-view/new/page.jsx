@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import axios from "axios";
+import ProtectedPage from "@/components/ProtectedPage";
 import SupplierSearch from "@/components/SupplierSearch";
 import ItemSection from "@/components/ItemSection";
 import { toast, ToastContainer } from "react-toastify";
@@ -168,9 +169,11 @@ const initialGRNState = {
 
 export default function GRNFormWrapper() {
   return (
+    <ProtectedPage module="GRN" action="create">
     <Suspense fallback={<div className="p-10 text-center text-gray-400">Loading...</div>}>
       <GRNForm />
     </Suspense>
+    </ProtectedPage>
   );
 }
 

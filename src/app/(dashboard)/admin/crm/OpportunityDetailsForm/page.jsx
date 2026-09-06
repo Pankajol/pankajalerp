@@ -2,6 +2,8 @@
 
 import React, { useState, useEffect, useCallback, memo } from "react";
 import { useRouter } from "next/navigation";
+import { useAuth } from "@/context/AuthContext";
+import ProtectedPage from "@/components/ProtectedPage";
 import {
   FaHandshake, FaCalculator, FaCalendarAlt,
   FaSave, FaArrowLeft, FaCheckCircle, FaInfoCircle,
@@ -61,6 +63,7 @@ const AddressSection = memo(({ title, data, onDataChange, onPincodeFetch }) => {
   const inputClass = "w-full px-3 py-2.5 rounded-lg border border-gray-200 bg-white text-sm font-medium focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 transition-all outline-none";
 
   return (
+    
     <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden mb-5">
       <div className="flex items-center gap-3 px-6 py-4 border-b border-gray-100 bg-amber-50/40">
         <div className="w-8 h-8 rounded-lg bg-amber-100 flex items-center justify-center text-amber-500">
@@ -325,6 +328,7 @@ const OpportunityForm = ({ opportunityId = null }) => {
   if (loading) return <div className="min-h-screen bg-gray-50 flex items-center justify-center"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600" /></div>;
 
   return (
+    <ProtectedPage permission="Opportunity" action={isEditMode ? "update" : "create"}>
     <div className="min-h-screen bg-gray-50 pb-12">
       <div className="sticky top-0 z-30 bg-white border-b border-gray-100 px-6 py-4 mb-8">
         <div className="max-w-5xl mx-auto flex items-center justify-between">
@@ -443,6 +447,7 @@ const OpportunityForm = ({ opportunityId = null }) => {
         </form>
       </div>
     </div>
+    </ProtectedPage>
   );
 };
 

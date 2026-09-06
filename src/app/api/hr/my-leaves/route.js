@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import connectDB from "@/lib/db";
 import Leave from "@/models/hr/Leave";
+import LeaveBalance from "@/models/hr/LeaveBalance";
 import Notification from "@/models/Notification"; // 🔥 ADD
 import CompanyUser from "@/models/CompanyUser";   // 🔥 ADD
 import Employee from "@/models/hr/Employee";      // 🔥 ADD
@@ -22,14 +23,22 @@ export async function GET(req) {
       );
     }
 
-    const leaves = await Leave.find({
+    const [leaves, balance] = await Promise.all([
+      Leave.find({
       employeeId: user.employeeId,
       companyId: user.companyId, // 🔥 IMPORTANT
-    }).sort({ createdAt: -1 });
+      }).sort({ createdAt: -1 }),
+      LeaveBalance.findOneAndUpdate(
+        { employeeId: user.employeeId, companyId: user.companyId },
+        { $setOnInsert: { employeeId: user.employeeId, companyId: user.companyId } },
+        { new: true, upsert: true, setDefaultsOnInsert: true }
+      ),
+    ]);
 
     return NextResponse.json({
       success: true,
       data: leaves,
+      balance,
     });
 
   } catch (err) {
@@ -70,7 +79,16 @@ export async function POST(req) {
       );
     }
 
-    if (new Date(fromDate) > new Date(toDate)) {
+    if (!["Casual", "Sick", "Paid", "Unpaid"].includes(leaveType)) {
+      return NextResponse.json(
+        { success: false, message: "Invalid leave type" },
+        { status: 400 }
+      );
+    }
+
+    const start = new Date(`${fromDate}T00:00:00.000Z`);
+    const end = new Date(`${toDate}T00:00:00.000Z`);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || start > end) {
       return NextResponse.json(
         { success: false, message: "Invalid date range" },
         { status: 400 }
@@ -82,11 +100,12 @@ export async function POST(req) {
     // =========================
     const exists = await Leave.findOne({
       employeeId: user.employeeId,
+      companyId: user.companyId,
       status: { $in: ["Pending", "Approved"] },
       $or: [
         {
-          fromDate: { $lte: new Date(toDate) },
-          toDate: { $gte: new Date(fromDate) },
+          fromDate: { $lte: end },
+          toDate: { $gte: start },
         },
       ],
     });
@@ -110,13 +129,12 @@ export async function POST(req) {
       );
     }
 
-   const balance = await LeaveBalance.findOne({
-  employeeId: user.employeeId,
-});
-
-if (!balance) {
-  return NextResponse.json({ success: false, message: "Balance not found" });
-}
+    const days = Math.floor((end - start) / (1000 * 60 * 60 * 24)) + 1;
+    const balance = await LeaveBalance.findOneAndUpdate(
+      { employeeId: user.employeeId, companyId: user.companyId },
+      { $setOnInsert: { employeeId: user.employeeId, companyId: user.companyId } },
+      { new: true, upsert: true, setDefaultsOnInsert: true }
+    );
 
 if (
   (leaveType === "Casual" && balance.casual < days) ||
@@ -135,8 +153,8 @@ if (
     const leave = await Leave.create({
       companyId: user.companyId,
       employeeId: user.employeeId,
-      fromDate,
-      toDate,
+      fromDate: start,
+      toDate: end,
       leaveType,
       reason,
       attachmentUrl,

@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import connectDB from "@/lib/db";
 import Task from "@/models/project/TaskModel";
 import Notification from "@/models/project/NotificationModel";
-import "@/models/project/ProjectModel";
+
+import Project from "@/models/project/ProjectModel";
 import CompanyUser from "@/models/CompanyUser";
 import "@/models/project/SubTaskModel";
 import { getTokenFromHeader, verifyJWT } from "@/lib/auth";
@@ -45,7 +46,7 @@ export async function POST(req) {
 
     // Return created task with populated fields
     const populatedTask = await Task.findById(task._id)
-      .populate("project", "name")
+      
       .populate("assignees", "name email")
       .populate({
         path: "subTasks",

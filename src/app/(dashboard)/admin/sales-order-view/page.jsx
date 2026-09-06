@@ -6,7 +6,10 @@ import { useRouter } from "next/navigation";
 import { toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import axios from "axios";
+import { useAuth } from "@/context/AuthContext";
+import ProtectedPage from "@/components/ProtectedPage";
 import jsPDF from "jspdf";
+
 import {
   FaEdit, FaTrash, FaCopy, FaEye,
   FaEnvelope, FaWhatsapp, FaSearch, FaPlus,
@@ -27,6 +30,7 @@ export default function SalesOrderList() {
   const [itemsPerPage, setItemsPerPage] = useState(10);
   const [totalRecords, setTotalRecords] = useState(0);
   const [totalPages, setTotalPages] = useState(0);
+   const { can, loading: authLoading, user } = useAuth();
 
   const fetchOrders = useCallback(async () => {
     setLoading(true);
@@ -182,6 +186,10 @@ const handleCopyTo = (order, dest) => {
   };
 
   return (
+    <ProtectedPage
+      module="Sales Order"
+      action="view"
+    >
     <div className="min-h-screen bg-gray-50">
       <div className="max-w-screen-xl mx-auto px-4 sm:px-6 py-6">
         {/* Header */}
@@ -191,18 +199,25 @@ const handleCopyTo = (order, dest) => {
             <p className="text-sm text-gray-400 mt-0.5">{totalRecords} total orders</p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <button onClick={downloadSalesOrderTemplate} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white border border-gray-200 text-gray-600 text-sm font-semibold hover:bg-gray-50 transition-all shadow-sm">
-              <FaDownload className="text-xs" /> Template
-            </button>
-            <label className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white border border-gray-200 text-gray-600 text-sm font-semibold hover:bg-gray-50 transition-all shadow-sm cursor-pointer">
-              <FaCloudUploadAlt className="text-xs" /> Bulk Upload
-              <input type="file" hidden accept=".csv" onChange={handleBulkUpload} disabled={uploading} />
-            </label>
-            <Link href="/admin/sales-order-view/new">
-              <button className="flex items-center gap-2 px-3.5 py-2 rounded-lg bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 transition-all shadow-sm shadow-indigo-200">
-                <FaPlus className="text-xs" /> Create Order
+            {
+can("Sales Order", "create") && (
+              <Link href="/admin/sales-order-view/new"
+                className="flex items-center gap-1 px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-semibold shadow-sm hover:bg-indigo-700 transition-all">   
+                <FaPlus className="text-[10px]" /> New Order
+              </Link>
+            )}
+            {can("Sales Order", "upload") && (
+              <label className={`flex items-center gap-1 px-4 py-2 rounded-lg bg-indigo-50 text-indigo-600 text-sm font-semibold shadow-sm hover:bg-indigo-100 transition-all cursor-pointer ${uploading ? "opacity-50 pointer-events-none" : ""}`}>
+                <FaCloudUploadAlt className="text-[10px]" /> {uploading ? "Uploading..." : "Bulk Upload"} 
+                <input type="file" accept=".csv" className="hidden" onChange={handleBulkUpload} disabled={uploading} />
+              </label>
+            )}
+            {can("Sales Order", "download") && (
+              <button onClick={downloadSalesOrderTemplate}
+                className="flex items-center gap-1 px-4 py-2 rounded-lg bg-indigo-50 text-indigo-600 text-sm font-semibold shadow-sm hover:bg-indigo-100 transition-all"> 
+                <FaDownload className="text-[10px]" /> Download Template 
               </button>
-            </Link>
+            )}
           </div>
         </div>
 
@@ -424,54 +439,136 @@ const handleCopyTo = (order, dest) => {
         }
       `}</style>
     </div>
+    </ProtectedPage>
   );
 }
 
+
+
 function RowMenu({ order, onDelete, onCopy }) {
   const router = useRouter();
+  const { can } = useAuth();
 
   const handleWhatsApp = async () => {
     try {
       const phone = "917738961799";
-      if (!order || !order.customerName || !order._id) return toast.error("Missing details");
+
+      if (!order || !order.customerName || !order._id) {
+        return toast.error("Missing details");
+      }
+
       const message = `Hello ${order.customerName}, your order #${order.documentNumberOrder || order._id} has been received. Total: ₹${order.grandTotal}.`;
+
       const doc = new jsPDF();
       doc.text("🧾 Sales Order", 10, 10);
       doc.text(`Order: ${order.documentNumberOrder}`, 10, 20);
       doc.text(`Customer: ${order.customerName}`, 10, 30);
       doc.text(`Total: ₹${order.grandTotal}`, 10, 40);
+
       const pdfBlob = doc.output("blob");
-      const pdfFile = new File([pdfBlob], `order-${order._id}.pdf`, { type: "application/pdf" });
+      const pdfFile = new File([pdfBlob], `order-${order._id}.pdf`, {
+        type: "application/pdf",
+      });
+
       const formData = new FormData();
       formData.append("phone", phone);
       formData.append("message", message);
       formData.append("file", pdfFile);
+
       const res = await axios.post("/api/whatsapp", formData, {
-        headers: { "Content-Type": "multipart/form-data" }
+        headers: {
+          "Content-Type": "multipart/form-data",
+        },
       });
-      if (res.data?.success) toast.success("WhatsApp sent!");
-    } catch (error) {
+
+      if (res.data?.success) {
+        toast.success("WhatsApp sent!");
+      }
+    } catch {
       toast.error("Error sending WhatsApp");
     }
   };
 
-  const actions = [
-    { icon: <FaEye />, label: "View", onClick: () => router.push(`/admin/sales-order-view/view/${order._id}`) },
-    { icon: <FaEdit />, label: "Edit", onClick: () => router.push(`/admin/sales-order-view/new?editId=${order._id}`) },
-    { icon: <FaCopy />, label: "Copy → Delivery", onClick: () => onCopy(order, "Delivery") },
-    { icon: <FaCopy />, label: "Copy → Invoice", onClick: () => onCopy(order, "Invoice") },
-    { icon: <FaEnvelope />, label: "Email", onClick: async () => {
+  const actions = [];
+
+  // View
+  if (can("Sales Order", "view")) {
+    actions.push({
+      icon: <FaEye />,
+      label: "View",
+      onClick: () =>
+        router.push(`/admin/sales-order-view/view/${order._id}`),
+    });
+  }
+
+  // Edit
+  if (can("Sales Order", "edit")) {
+    actions.push({
+      icon: <FaEdit />,
+      label: "Edit",
+      onClick: () =>
+        router.push(`/admin/sales-order-view/new?editId=${order._id}`),
+    });
+  }
+
+  // Copy → Delivery
+  if (can("Sales Order", "copy")) {
+    actions.push({
+      icon: <FaCopy />,
+      label: "Copy → Delivery",
+      onClick: () => onCopy(order, "Delivery"),
+    });
+  }
+
+  // Copy → Invoice
+  if (can("Sales Order", "copy")) {
+    actions.push({
+      icon: <FaCopy />,
+      label: "Copy → Invoice",
+      onClick: () => onCopy(order, "Invoice"),
+    });
+  }
+
+  // Email
+  if (can("Sales Order", "email")) {
+    actions.push({
+      icon: <FaEnvelope />,
+      label: "Email",
+      onClick: async () => {
         try {
-          const res = await axios.post("/api/email", { type: "order", id: order._id });
-          if (res.data.success) toast.success("Email sent!");
+          const res = await axios.post("/api/email", {
+            type: "order",
+            id: order._id,
+          });
+
+          if (res.data.success) {
+            toast.success("Email sent!");
+          }
         } catch {
           toast.error("Email error");
         }
-      }
-    },
-    { icon: <FaWhatsapp />, label: "WhatsApp", onClick: handleWhatsApp },
-    { icon: <FaTrash />, label: "Delete", color: "text-red-600", onClick: () => onDelete(order._id) },
-  ];
+      },
+    });
+  }
+
+  // WhatsApp
+  if (can("Sales Order", "whatsapp")) {
+    actions.push({
+      icon: <FaWhatsapp />,
+      label: "WhatsApp",
+      onClick: handleWhatsApp,
+    });
+  }
+
+  // Delete
+  if (can("Sales Order", "delete")) {
+    actions.push({
+      icon: <FaTrash />,
+      label: "Delete",
+      color: "text-red-600",
+      onClick: () => onDelete(order._id),
+    });
+  }
 
   return <ActionMenu actions={actions} />;
 }

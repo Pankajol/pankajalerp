@@ -4,6 +4,8 @@ import { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import axios from "axios";
 import { useRouter } from "next/navigation";
+import ProtectedPage from "@/components/ProtectedPage";
+import {useAuth} from "@/context/AuthContext";
 import {
   FaEdit, FaTrash, FaEye, FaSearch, FaPlus, FaFileInvoiceDollar
 } from "react-icons/fa";
@@ -87,6 +89,7 @@ export default function DebitNoteList() {
   };
 
   return (
+    <ProtectedPage module="DebitNote" action="view">
     <div className="min-h-screen bg-gray-50">
       <div className="max-w-screen-xl mx-auto px-4 sm:px-6 py-6">
 
@@ -95,11 +98,15 @@ export default function DebitNoteList() {
             <h1 className="text-2xl font-extrabold tracking-tight text-gray-900">Debit Notes</h1>
             <p className="text-sm text-gray-400 mt-0.5">Supplier return and adjustment tracking</p>
           </div>
+       {
+        can("DebitNote", "create") && (
           <Link href="/admin/debit-notes-view/new">
             <button className="flex items-center gap-2 px-3.5 py-2 rounded-lg bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 transition-all shadow-sm">
               <FaPlus className="text-xs" /> Create Debit Note
             </button>
           </Link>
+        )
+       }
         </div>
 
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
@@ -214,16 +221,48 @@ export default function DebitNoteList() {
       </div>
       <style>{`@keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}`}</style>
     </div>
+    </ProtectedPage>
   );
 }
 
+
+
 function RowMenu({ note, onDelete }) {
   const router = useRouter();
-  const actions = [
-    { icon: <FaEye />, label: "View Note", onClick: () => router.push(`/admin/debit-notes-view/view/${note._id}`) },
-    { icon: <FaEdit />, label: "Edit Note", onClick: () => router.push(`/admin/debit-notes-view/new?editId=${note._id}`) },
-    { icon: <FaTrash />, label: "Delete", color: "text-red-600", onClick: () => onDelete(note._id) },
-  ];
+  const { can } = useAuth();
+
+  const actions = [];
+
+  // View
+  if (can("Debit Note", "view")) {
+    actions.push({
+      icon: <FaEye />,
+      label: "View Note",
+      onClick: () =>
+        router.push(`/admin/debit-notes-view/view/${note._id}`),
+    });
+  }
+
+  // Edit
+  if (can("Debit Note", "edit")) {
+    actions.push({
+      icon: <FaEdit />,
+      label: "Edit Note",
+      onClick: () =>
+        router.push(`/admin/debit-notes-view/new?editId=${note._id}`),
+    });
+  }
+
+  // Delete
+  if (can("Debit Note", "delete")) {
+    actions.push({
+      icon: <FaTrash />,
+      label: "Delete",
+      color: "text-red-600",
+      onClick: () => onDelete(note._id),
+    });
+  }
+
   return <ActionMenu actions={actions} />;
 }
 

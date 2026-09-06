@@ -50,13 +50,14 @@ const SupplierSchema = new mongoose.Schema({
     type: String,
     trim: true,
     lowercase: true,
+    set: value => value?.trim() || undefined,
     match: [/^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/, "Invalid email format"]
   },
   mobileNumber: {
     type: String,
-   
+    set: value => value?.trim() || undefined,
   },
-  valid: { type: Boolean, default: false },
+  valid: { type: Boolean, default: null },
   incorporated: { type: String, trim: true },
   udyamNumber: {
     type: String,
@@ -112,6 +113,7 @@ const SupplierSchema = new mongoose.Schema({
     // required: [true, "PAN is required"],
     trim: true,
     uppercase: true,
+    set: value => value?.trim() || undefined,
     // match: [/^[A-Z]{5}[0-9]{4}[A-Z]{1}$/, "Invalid PAN format"]
   },
 
@@ -146,7 +148,7 @@ const SupplierSchema = new mongoose.Schema({
   },
   qualityRating: {
     type: String,
-    enum: ["A", "B", "C", "D"],
+    enum: ["A+", "A", "B", "C", "D"],
     default: "B"
   }
 }, { timestamps: true });

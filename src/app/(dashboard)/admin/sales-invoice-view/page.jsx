@@ -4,6 +4,8 @@ import { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "react-toastify";
+import ProtectedPage from "@/components/ProtectedPage";
+import { useAuth } from "@/context/AuthContext";
 import "react-toastify/dist/ReactToastify.css";
 import axios from "axios";
 import {
@@ -29,6 +31,7 @@ export default function SalesInvoiceList() {
   // State for email modal
   const [emailModalOpen, setEmailModalOpen] = useState(false);
   const [selectedInvoice, setSelectedInvoice] = useState(null);
+  const { can } = useAuth();
 
   const fetchInvoices = async () => {
     setLoading(true);
@@ -171,6 +174,7 @@ export default function SalesInvoiceList() {
   };
 
   return (
+    <ProtectedPage module="SalesInvoice" action="view">
     <div className="min-h-screen bg-gray-50">
       <div className="max-w-screen-xl mx-auto px-4 sm:px-6 py-6">
 
@@ -406,19 +410,65 @@ export default function SalesInvoiceList() {
 
       <style>{`@keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}`}</style>
     </div>
+    </ProtectedPage>
   );
 }
 
 // InvoiceRowMenu component with onEmail prop
 function InvoiceRowMenu({ invoice, onDelete, onCopy, onEmail }) {
   const router = useRouter();
-  const actions = [
-    { icon: <FaEye />, label: "View", onClick: () => router.push(`/admin/sales-invoice-view/view/${invoice._id}`) },
-    { icon: <FaEdit />, label: "Edit", onClick: () => router.push(`/admin/sales-invoice-view/new?editId=${invoice._id}`) },
-    { icon: <FaCopy />, label: "Copy → Credit Memo", onClick: () => onCopy(invoice, "CreditMemo") },
-    { icon: <FaEnvelope />, label: "Email", onClick: () => onEmail(invoice) },
-    { icon: <FaTrash />, label: "Delete", color: "text-red-600", onClick: () => onDelete(invoice._id) },
-  ];
+  const { can } = useAuth();
+
+  const actions = [];
+
+  // View
+  if (can("Sales Invoice", "view")) {
+    actions.push({
+      icon: <FaEye />,
+      label: "View",
+      onClick: () =>
+        router.push(`/admin/sales-invoice-view/view/${invoice._id}`),
+    });
+  }
+
+  // Edit
+  if (can("Sales Invoice", "edit")) {
+    actions.push({
+      icon: <FaEdit />,
+      label: "Edit",
+      onClick: () =>
+        router.push(`/admin/sales-invoice-view/new?editId=${invoice._id}`),
+    });
+  }
+
+  // Copy → Credit Memo
+  if (can("Sales Invoice", "copy")) {
+    actions.push({
+      icon: <FaCopy />,
+      label: "Copy → Credit Memo",
+      onClick: () => onCopy(invoice, "CreditMemo"),
+    });
+  }
+
+  // Email
+  if (can("Sales Invoice", "email")) {
+    actions.push({
+      icon: <FaEnvelope />,
+      label: "Email",
+      onClick: () => onEmail(invoice),
+    });
+  }
+
+  // Delete
+  if (can("Sales Invoice", "delete")) {
+    actions.push({
+      icon: <FaTrash />,
+      label: "Delete",
+      color: "text-red-600",
+      onClick: () => onDelete(invoice._id),
+    });
+  }
+
   return <ActionMenu actions={actions} />;
 }
 

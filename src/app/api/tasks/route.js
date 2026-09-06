@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import connectDB from "@/lib/db";
 import Task from "@/models/TaskModel";
+import SubTask from "@/models/project/SubTaskModel";
+import "@/models/project/ProjectModel";
+import Lead from "@/models/crm/load";
 import Notification from "@/models/Notification";
 import CompanyUser from "@/models/CompanyUser";  // ✅ Add this import
 import { getTokenFromHeader, verifyJWT } from "@/lib/auth";

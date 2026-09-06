@@ -14,6 +14,8 @@ function isAuthorized(user) {
   const allowedRoles = [
     "admin",
     "sales manager",
+    "Sales",
+    "Purchase",
     "purchase manager",
     "inventory manager",
     "accounts manager",
@@ -86,6 +88,9 @@ export async function PUT(req, { params }) {
     const data = await req.json();
     if (!data || Object.keys(data).length === 0) {
       return NextResponse.json({ success: false, message: "No data provided" }, { status: 400 });
+    }
+    if (data.isTextile && !data.textileItemType) {
+      return NextResponse.json({ success: false, message: "Textile Item Type is required" }, { status: 400 });
     }
 
     const updatedItem = await Item.findOneAndUpdate(

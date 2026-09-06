@@ -127,8 +127,9 @@ export async function POST(req, contextPromise) {
     }
 
     // ✅ Step 3: Update Production Order qty
+    const nextReceiptQty = (order.reciptforproductionqty || 0) + qtyParam;
     await ProductionOrder.findByIdAndUpdate(orderId, {
-      $set: { status: "received from production" },
+      $set: { status: nextReceiptQty >= order.quantity ? "Completed" : "In Progress" },
       $inc: { reciptforproductionqty: qtyParam },
     });
 

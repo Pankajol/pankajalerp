@@ -9,9 +9,9 @@ function Toast({ toasts }) {
     <div style={{ position: "fixed", top: 24, right: 24, zIndex: 9999, display: "flex", flexDirection: "column", gap: 10 }}>
       {toasts.map(t => (
         <div key={t.id} style={{
-          background: t.type === "success" ? "#0a1628" : "#1a0a0a",
+          background: t.type === "success" ? "#f0fdf4" : "#fef2f2",
           border: `1px solid ${t.type === "success" ? "#22c55e55" : "#ef444455"}`,
-          color: t.type === "success" ? "#22c55e" : "#ef4444",
+          color: t.type === "success" ? "#166534" : "#991b1b",
           padding: "12px 20px", borderRadius: 12, fontSize: 13,
           fontFamily: "'DM Mono', monospace",
           boxShadow: `0 8px 32px ${t.type === "success" ? "#22c55e22" : "#ef444422"}`,
@@ -45,7 +45,7 @@ function Avatar({ name, size = 96 }) {
       fontFamily: "'Syne', sans-serif",
       boxShadow: `0 8px 32px ${from}55`,
       flexShrink: 0,
-      border: "3px solid rgba(255,255,255,0.08)",
+      border: "3px solid rgba(255,255,255,0.6)",
     }}>
       {initials}
     </div>
@@ -55,8 +55,8 @@ function Avatar({ name, size = 96 }) {
 // ─── Info Row ─────────────────────────────────────────────────
 function InfoRow({ label, value, icon, editable, editValue, onChange, delay }) {
   return (
-    <div style={{ padding: "16px 0", borderBottom: "1px solid rgba(255,255,255,0.05)", animation: `pr-fadeUp 0.4s ease ${delay}s both` }}>
-      <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, color: "#475569", textTransform: "uppercase", letterSpacing: 2, marginBottom: 7, display: "flex", alignItems: "center", gap: 6 }}>
+    <div style={{ padding: "16px 0", borderBottom: "1px solid rgba(0,0,0,0.05)", animation: `pr-fadeUp 0.4s ease ${delay}s both` }}>
+      <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, color: "#5e6f8d", textTransform: "uppercase", letterSpacing: 2, marginBottom: 7, display: "flex", alignItems: "center", gap: 6 }}>
         {icon && <span style={{ fontSize: 13 }}>{icon}</span>}
         {label}
       </div>
@@ -67,15 +67,15 @@ function InfoRow({ label, value, icon, editable, editValue, onChange, delay }) {
           onChange={e => onChange(e.target.value)}
           style={{
             width: "100%", padding: "10px 14px", borderRadius: 10,
-            background: "rgba(59,130,246,0.08)", border: "1px solid rgba(59,130,246,0.3)",
-            color: "#e2e8f0", fontFamily: "'Syne', sans-serif", fontSize: 15, fontWeight: 600,
+            background: "#f0f7ff", border: "1px solid rgba(59,130,246,0.3)",
+            color: "#0b1a2a", fontFamily: "'Syne', sans-serif", fontSize: 15, fontWeight: 600,
             outline: "none", transition: "border 0.2s",
           }}
           onFocus={e => e.target.style.borderColor = "rgba(59,130,246,0.7)"}
           onBlur={e => e.target.style.borderColor = "rgba(59,130,246,0.3)"}
         />
       ) : (
-        <div style={{ fontSize: 15, fontWeight: 600, color: value ? "#e2e8f0" : "#334155" }}>
+        <div style={{ fontSize: 15, fontWeight: 600, color: value ? "#0b1a2a" : "#7a8aa3" }}>
           {value || "—"}
         </div>
       )}
@@ -111,38 +111,38 @@ function PasswordModal({ open, onClose, onSuccess }) {
 
   const eyeBtn = (field) => (
     <button type="button" onClick={() => setShow(p => ({ ...p, [field]: !p[field] }))}
-      style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", color: "#475569", cursor: "pointer", fontSize: 14 }}>
+      style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", color: "#7a8aa3", cursor: "pointer", fontSize: 14 }}>
       {show[field] ? "◎" : "●"}
     </button>
   );
 
   return (
     <>
-      <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.65)", backdropFilter: "blur(5px)", zIndex: 100, opacity: open ? 1 : 0, pointerEvents: open ? "all" : "none", transition: "opacity 0.3s" }} />
+      <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.3)", backdropFilter: "blur(5px)", zIndex: 100, opacity: open ? 1 : 0, pointerEvents: open ? "all" : "none", transition: "opacity 0.3s" }} />
       <div style={{
         position: "fixed", top: "50%", left: "50%", transform: open ? "translate(-50%,-50%) scale(1)" : "translate(-50%,-50%) scale(0.92)",
-        width: "min(420px, 92vw)", background: "#0a0f1e",
-        border: "1px solid rgba(255,255,255,0.1)", borderRadius: 20,
+        width: "min(420px, 92vw)", background: "#ffffff",
+        border: "1px solid rgba(0,0,0,0.08)", borderRadius: 20,
         padding: "32px 28px", zIndex: 101,
         opacity: open ? 1 : 0, pointerEvents: open ? "all" : "none",
         transition: "all 0.3s cubic-bezier(0.4,0,0.2,1)",
-        boxShadow: "0 24px 80px rgba(0,0,0,0.7)",
+        boxShadow: "0 24px 80px rgba(0,0,0,0.15)",
       }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
           <div>
-            <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, color: "#475569", textTransform: "uppercase", letterSpacing: 2 }}>Security</div>
-            <h3 style={{ fontFamily: "'Syne', sans-serif", fontWeight: 800, fontSize: 20, color: "#f1f5f9", margin: "4px 0 0" }}>Change Password</h3>
+            <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, color: "#5e6f8d", textTransform: "uppercase", letterSpacing: 2 }}>Security</div>
+            <h3 style={{ fontFamily: "'Syne', sans-serif", fontWeight: 800, fontSize: 20, color: "#0b1a2a", margin: "4px 0 0" }}>Change Password</h3>
           </div>
-          <button onClick={onClose} style={{ background: "rgba(255,255,255,0.06)", border: "none", color: "#94a3b8", width: 34, height: 34, borderRadius: 8, cursor: "pointer" }}>✕</button>
+          <button onClick={onClose} style={{ background: "transparent", border: "none", color: "#7a8aa3", width: 34, height: 34, borderRadius: 8, cursor: "pointer" }}>✕</button>
         </div>
         <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
           {[["current","Current Password"],["newPass","New Password"],["confirm","Confirm Password"]].map(([field, label]) => (
             <div key={field}>
-              <label style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, color: "#475569", textTransform: "uppercase", letterSpacing: 1.5, display: "block", marginBottom: 7 }}>{label}</label>
+              <label style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, color: "#5e6f8d", textTransform: "uppercase", letterSpacing: 1.5, display: "block", marginBottom: 7 }}>{label}</label>
               <div style={{ position: "relative" }}>
                 <input type={show[field] ? "text" : "password"} required value={form[field]}
                   onChange={e => setForm(p => ({ ...p, [field]: e.target.value }))}
-                  style={{ width: "100%", padding: "10px 40px 10px 14px", borderRadius: 10, background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.1)", color: "#e2e8f0", fontFamily: "'DM Mono', monospace", fontSize: 13, outline: "none" }}
+                  style={{ width: "100%", padding: "10px 40px 10px 14px", borderRadius: 10, background: "#f8faff", border: "1px solid rgba(0,0,0,0.1)", color: "#0b1a2a", fontFamily: "'DM Mono', monospace", fontSize: 13, outline: "none" }}
                 />
                 {eyeBtn(field)}
               </div>
@@ -207,9 +207,9 @@ export default function ProfilePage() {
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Syne:wght@400;600;700;800&display=swap');
         @keyframes pr-shimmer { 0%{background-position:-400px 0} 100%{background-position:400px 0} }
-        .pr-skeleton { background:linear-gradient(90deg,#1e293b 25%,#2d3f55 50%,#1e293b 75%); background-size:400px 100%; animation:pr-shimmer 1.4s infinite; border-radius:8px; }
+        .pr-skeleton { background:linear-gradient(90deg,#dce3ed 25%,#eef4fa 50%,#dce3ed 75%); background-size:400px 100%; animation:pr-shimmer 1.4s infinite; border-radius:8px; }
         .pr-page * { box-sizing:border-box; }
-        .pr-page { min-height:100vh; background:#060b14; padding:32px 20px; }
+        .pr-page { min-height:100vh; background:#f2f6fc; padding:32px 20px; }
       `}</style>
       <div className="pr-page">
         <div style={{ maxWidth: 700, margin: "0 auto" }}>
@@ -239,7 +239,7 @@ export default function ProfilePage() {
         @keyframes pr-spin    { to{transform:rotate(360deg)} }
         @keyframes pr-shimmer { 0%{background-position:-400px 0} 100%{background-position:400px 0} }
         .pr-page * { box-sizing:border-box; }
-        .pr-page { min-height:100vh; background:#060b14; font-family:'Syne',sans-serif; color:#e2e8f0; padding:32px 20px 60px; }
+        .pr-page { min-height:100vh; background:#f2f6fc; font-family:'Syne',sans-serif; color:#0b1a2a; padding:32px 20px 60px; }
         .pr-action-btn { display:flex; align-items:center; gap:8px; padding:11px 20px; border-radius:11px; border:none; font-family:'Syne',sans-serif; font-weight:700; font-size:14px; cursor:pointer; transition:all 0.2s; }
         .pr-action-btn:hover { transform:translateY(-2px); filter:brightness(1.1); }
         .pr-action-btn:active { transform:translateY(0) scale(0.97); }
@@ -254,26 +254,27 @@ export default function ProfilePage() {
           {/* ── Page header ── */}
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 32, animation: "pr-fadeUp 0.4s ease" }}>
             <div>
-              <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, color: "#475569", textTransform: "uppercase", letterSpacing: 2, marginBottom: 4 }}>HR Portal</div>
-              <h1 style={{ fontSize: 32, fontWeight: 800, color: "#f8fafc", margin: 0 }}>My Profile</h1>
+              <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, color: "#5e6f8d", textTransform: "uppercase", letterSpacing: 2, marginBottom: 4 }}>HR Portal</div>
+              <h1 style={{ fontSize: 32, fontWeight: 800, color: "#0b1a2a", margin: 0 }}>My Profile</h1>
             </div>
             <button className="pr-action-btn" onClick={handleLogout}
-              style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.25)", color: "#ef4444" }}>
+              style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.25)", color: "#c0392b" }}>
               <span>⏻</span> Logout
             </button>
           </div>
 
           {/* ── Profile hero card ── */}
           <div style={{
-            background: "#0d1829", border: "1px solid rgba(255,255,255,0.07)",
+            background: "#ffffff", border: "1px solid rgba(0,0,0,0.06)",
             borderRadius: 20, padding: "28px 28px 24px",
             marginBottom: 16, animation: "pr-fadeUp 0.5s ease 0.05s both",
             display: "flex", alignItems: "center", gap: 24, flexWrap: "wrap",
+            boxShadow: "0 2px 8px rgba(0,0,0,0.02)",
           }}>
             <Avatar name={user.fullName} size={88} />
             <div style={{ flex: 1, minWidth: 200 }}>
-              <div style={{ fontSize: 24, fontWeight: 800, color: "#f1f5f9", lineHeight: 1.2 }}>{user.fullName}</div>
-              <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 13, color: "#64748b", marginTop: 5 }}>{user.email}</div>
+              <div style={{ fontSize: 24, fontWeight: 800, color: "#0b1a2a", lineHeight: 1.2 }}>{user.fullName}</div>
+              <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 13, color: "#5e6f8d", marginTop: 5 }}>{user.email}</div>
               <div style={{ display: "flex", gap: 8, marginTop: 14, flexWrap: "wrap" }}>
                 {user.department?.name && (
                   <span style={{ background: "rgba(56,189,248,0.1)", color: "#38bdf8", border: "1px solid rgba(56,189,248,0.2)", fontFamily: "'DM Mono', monospace", fontSize: 11, padding: "4px 12px", borderRadius: 20 }}>
@@ -292,14 +293,14 @@ export default function ProfilePage() {
             </div>
             {joinDate && (
               <div style={{ textAlign: "right" }}>
-                <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, color: "#334155", textTransform: "uppercase", letterSpacing: 1.5 }}>Joined</div>
-                <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 13, color: "#64748b", marginTop: 4 }}>{joinDate}</div>
+                <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, color: "#7a8aa3", textTransform: "uppercase", letterSpacing: 1.5 }}>Joined</div>
+                <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 13, color: "#5e6f8d", marginTop: 4 }}>{joinDate}</div>
               </div>
             )}
           </div>
 
           {/* ── Details card ── */}
-          <div style={{ background: "#0d1829", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 20, padding: "8px 28px 20px", marginBottom: 16, animation: "pr-fadeUp 0.5s ease 0.1s both" }}>
+          <div style={{ background: "#ffffff", border: "1px solid rgba(0,0,0,0.06)", borderRadius: 20, padding: "8px 28px 20px", marginBottom: 16, animation: "pr-fadeUp 0.5s ease 0.1s both", boxShadow: "0 2px 8px rgba(0,0,0,0.02)" }}>
             <InfoRow label="Full Name" icon="◈" delay={0.12}
               value={user.fullName}
               editable={editMode} editValue={form.name}
@@ -326,7 +327,7 @@ export default function ProfilePage() {
                   Save Changes
                 </button>
                 <button className="pr-action-btn" onClick={() => { setEditMode(false); setForm({ name: user.fullName, email: user.email }); }}
-                  style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.1)", color: "#94a3b8" }}>
+                  style={{ background: "rgba(0,0,0,0.04)", border: "1px solid rgba(0,0,0,0.1)", color: "#5e6f8d" }}>
                   ✕ Cancel
                 </button>
               </>
@@ -338,7 +339,7 @@ export default function ProfilePage() {
             )}
 
             <button className="pr-action-btn" onClick={() => setPwModal(true)}
-              style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.1)", color: "#94a3b8" }}>
+              style={{ background: "rgba(0,0,0,0.04)", border: "1px solid rgba(0,0,0,0.1)", color: "#5e6f8d" }}>
               🔒 Change Password
             </button>
           </div>

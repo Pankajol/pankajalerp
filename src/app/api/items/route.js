@@ -8,8 +8,8 @@ function isAuthorized(user) {
   if (!user) return false;
   if (user.type === "company") return true;
   const allowedRoles = [
-    "admin", "sales manager", "purchase manager", "inventory manager",
-    "accounts manager", "hr manager", "support executive",
+    "admin", "sales manager","Sales","Purchase", "purchase manager",
+    "inventory manager", "accounts manager", "hr manager", "support executive",
     "production head", "project manager",
   ];
   const userRoles = Array.isArray(user.roles) ? user.roles : [];
@@ -39,7 +39,8 @@ export async function GET(req) {
     const stats = searchParams.get("stats") === "true";
     const posOnly = searchParams.get("posOnly") === "true";
     const page = Math.max(parseInt(searchParams.get("page")) || 1, 1);
-    const limit = Math.min(parseInt(searchParams.get("limit")) || 10, 100);
+    const isTextile = searchParams.get("isTextile") === "true";
+    const limit = Math.min(parseInt(searchParams.get("limit")) || (isTextile ? 500 : 10), 500);
     const search = searchParams.get("search") || "";
     const itemType = searchParams.get("itemType");
 
@@ -80,6 +81,7 @@ export async function GET(req) {
 
     // 4) Paginated list – now includes tax fields
     const query = { companyId: user.companyId };
+    if (isTextile) query.isTextile = true;
     if (search) {
       query.$or = [
         { itemName: { $regex: search, $options: "i" } },
@@ -94,7 +96,7 @@ export async function GET(req) {
     const skip = (page - 1) * limit;
     const [items, total] = await Promise.all([
       Item.find(query)
-        .select("itemCode itemName category imageUrl itemType unitPrice uom status posEnabled imageUrl manufacturer variants createdAt includeGST includeIGST gstCode gstName gstRate cgstRate sgstRate igstCode igstName igstRate")
+        .select("itemCode itemName category imageUrl itemType unitPrice uom status posEnabled manufacturer variants createdAt includeGST includeIGST gstCode gstName gstRate cgstRate sgstRate igstCode igstName igstRate isTextile textileItemType isStockItem stockUom brand hsnCode defaultWarehouse batchRequired hasVariants rollTrackingEnabled textileDetails quantity reorderLevel")
         .skip(skip)
         .limit(limit)
         .sort({ createdAt: -1 })
@@ -122,9 +124,12 @@ export async function POST(req) {
     const data = await req.json();
     const required = ["itemCode", "itemName", "category", "unitPrice", "quantity"];
     for (const field of required) {
-      if (!data[field]) {
+      if (data[field] === undefined || data[field] === null || data[field] === "") {
         return NextResponse.json({ success: false, message: `${field} is required` }, { status: 400 });
       }
+    }
+    if (data.isTextile && !data.textileItemType) {
+      return NextResponse.json({ success: false, message: "textileItemType is required for textile items" }, { status: 400 });
     }
 
     const existing = await Item.findOne({ itemCode: data.itemCode, companyId: user.companyId });

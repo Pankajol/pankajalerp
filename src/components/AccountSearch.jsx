@@ -3,10 +3,7 @@
 import React, { useState, useEffect } from "react";
 import Select from "react-select";
 import axios from "axios";
-import { FaExternalLinkAlt } from "react-icons/fa";
-import Link from "next/link";
-
-const CREATE_NEW_OPTION = { label: "➕ Create new account", value: "__create_new__" };
+const CREATE_NEW_OPTION = { label: "+ Create new account", value: "__create_new__" };
 
 const AccountSearch = ({ value, onSelect }) => {
   const [options, setOptions] = useState([]);
@@ -28,7 +25,7 @@ const fetchAccounts = async () => {
       return;
     }
 
-    const res = await axios.get("/api/account/heads", {
+    const res = await axios.get("/api/accounts/heads", {
       headers: {
         Authorization: `Bearer ${token}`, // ✅ Add token in header
       },
@@ -36,11 +33,12 @@ const fetchAccounts = async () => {
 
     if (res.data.success) {
       const accounts = (res.data.data || []).map((acc) => ({
-        label: `${acc.accountCode} - ${acc.accountName}`,
-        value: acc._id, // ✅ Store ID for backend
-        accountCode: acc.accountCode,
-        accountName: acc.accountName,
-        accountHead: acc.accountHead,
+        label: acc.name,
+        value: acc._id,
+        code: acc.code,
+        name: acc.name,
+        type: acc.type,
+        group: acc.group,
       }));
 
       setOptions([...accounts, CREATE_NEW_OPTION]); // ✅ Add "Create New" option
@@ -64,9 +62,10 @@ const fetchAccounts = async () => {
         selected
           ? {
               _id: selected.value,
-              accountCode: selected.accountCode,
-              accountName: selected.accountName,
-              accountHead: selected.accountHead,
+              code: selected.code,
+              name: selected.name,
+              type: selected.type,
+              group: selected.group,
             }
           : null
       );
@@ -89,10 +88,11 @@ const fetchAccounts = async () => {
           value
             ? {
                 value: value._id,
-                label: `${value.accountCode} - ${value.accountName}`,
-                accountCode: value.accountCode,
-                accountName: value.accountName,
-                accountHead: value.accountHead,
+                label: value.name || value.accountName || "Selected account",
+                code: value.code || value.accountCode,
+                name: value.name || value.accountName,
+                type: value.type,
+                group: value.group || value.accountHead,
               }
             : null
         }

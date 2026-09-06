@@ -9,6 +9,8 @@ import {
   FaHandshake, FaRupeeSign, FaCalendarAlt, FaEnvelope, FaWhatsapp, FaSpinner,
   FaPlus, FaCheckDouble, FaBuilding, FaUser, FaMapMarkerAlt, FaPhoneAlt
 } from "react-icons/fa";
+import { useAuth } from "@/context/AuthContext";
+import ProtectedPage from "@/components/ProtectedPage";
 import ItemSection from "@/components/ItemSection";
 import EntityTasks from "@/components/crm/EntityTasks";
 import jsPDF from "jspdf";
@@ -290,6 +292,7 @@ export default function OpportunityDetailPage() {
   const isEditable = opp.stage !== "Closed Won" && opp.stage !== "Closed Lost";
 
   return (
+    <ProtectedPage permission="Opportunity" action="view">
     <div className="min-h-screen bg-gray-50">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6">
         {/* Header */}
@@ -484,6 +487,7 @@ export default function OpportunityDetailPage() {
         )}
       </div>
     </div>
+    </ProtectedPage>
   );
 }
 

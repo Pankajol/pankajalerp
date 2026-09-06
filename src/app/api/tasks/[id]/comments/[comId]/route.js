@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import connectDB from "@/lib/db";
 import Comment from "@/models/project/CommentModel";
+import Task from "@/models/TaskModel";  
+
+import SubTask from "@/models/project/SubTaskModel";
 import { getTokenFromHeader, verifyJWT } from "@/lib/auth";
 
 // =================== GET ONE COMMENT ===================

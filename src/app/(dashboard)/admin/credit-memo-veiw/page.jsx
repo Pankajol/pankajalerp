@@ -3,6 +3,8 @@
 import { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import ProtectedPage from "@/components/ProtectedPage";
+import { useAuth } from "@/context/AuthContext";
 import { toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import axios from "axios";
@@ -128,6 +130,7 @@ export default function CreditMemoList() {
   };
 
   return (
+    <ProtectedPage module="CreditMemo" action="view">
     <div className="min-h-screen bg-gray-50">
       <div className="max-w-screen-xl mx-auto px-4 sm:px-6 py-6">
 
@@ -138,18 +141,41 @@ export default function CreditMemoList() {
             <p className="text-sm text-gray-400 mt-0.5">{memos.length} total credit memos</p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <button onClick={downloadTemplate} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white border border-gray-200 text-gray-600 text-sm font-semibold hover:bg-gray-50 transition-all shadow-sm">
-              <FaDownload className="text-xs" /> Template
-            </button>
-            <label className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white border border-gray-200 text-gray-600 text-sm font-semibold hover:bg-gray-50 transition-all shadow-sm cursor-pointer">
-              <FaCloudUploadAlt className="text-xs" /> {uploading ? "Uploading..." : "Bulk Upload"}
-              <input type="file" hidden accept=".csv" onChange={handleBulkUpload} />
-            </label>
-            <Link href="/admin/credit-memo-veiw/new">
-              <button className="flex items-center gap-2 px-3.5 py-2 rounded-lg bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 transition-all shadow-sm shadow-indigo-200">
-                <FaPlus className="text-xs" /> Create Credit Memo
-              </button>
-            </Link>
+           {/* Download Template */}
+{can("Credit Memo", "download") && (
+  <button
+    onClick={downloadTemplate}
+    className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white border border-gray-200 text-gray-600 text-sm font-semibold hover:bg-gray-50 transition-all shadow-sm"
+  >
+    <FaDownload className="text-xs" />
+    Template
+  </button>
+)}
+
+{/* Bulk Upload */}
+{can("Credit Memo", "upload") && (
+  <label className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white border border-gray-200 text-gray-600 text-sm font-semibold hover:bg-gray-50 transition-all shadow-sm cursor-pointer">
+    <FaCloudUploadAlt className="text-xs" />
+    {uploading ? "Uploading..." : "Bulk Upload"}
+
+    <input
+      type="file"
+      hidden
+      accept=".csv"
+      onChange={handleBulkUpload}
+    />
+  </label>
+)}
+
+{/* Create Credit Memo */}
+{can("Credit Memo", "create") && (
+  <Link href="/admin/credit-memo-veiw/new">
+    <button className="flex items-center gap-2 px-3.5 py-2 rounded-lg bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 transition-all shadow-sm shadow-indigo-200">
+      <FaPlus className="text-xs" />
+      Create Credit Memo
+    </button>
+  </Link>
+)}
           </div>
         </div>
 
@@ -282,28 +308,85 @@ export default function CreditMemoList() {
       </div>
       <style>{`@keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}`}</style>
     </div>
+    </ProtectedPage>
   );
 }
 
+
+
 function CreditMemoRowMenu({ memo, onDelete }) {
   const router = useRouter();
+  const { can } = useAuth();
 
-  const actions = [
-    { icon: <FaEye />,    label: "View", onClick: () => router.push(`/admin/credit-memo-veiw/view/${memo._id}`) },
-    { icon: <FaEdit />,   label: "Edit", onClick: () => router.push(`/admin/credit-memo-veiw/new?editId=${memo._id}`) },
-    { icon: <FaEnvelope />, label: "Email", onClick: async () => {
+  const actions = [];
+
+  // View
+  if (can("Credit Memo", "view")) {
+    actions.push({
+      icon: <FaEye />,
+      label: "View",
+      onClick: () =>
+        router.push(`/admin/credit-memo-veiw/view/${memo._id}`),
+    });
+  }
+
+  // Edit
+  if (can("Credit Memo", "edit")) {
+    actions.push({
+      icon: <FaEdit />,
+      label: "Edit",
+      onClick: () =>
+        router.push(`/admin/credit-memo-veiw/new?editId=${memo._id}`),
+    });
+  }
+
+  // Email
+  if (can("Credit Memo", "email")) {
+    actions.push({
+      icon: <FaEnvelope />,
+      label: "Email",
+      onClick: async () => {
         try {
-          const res = await axios.post("/api/email", { type: "credit-memo", id: memo._id });
-          if (res.data.success) toast.success("Email sent!");
-        } catch { toast.error("Email error"); }
-      }
-    },
-    { icon: <FaTrash />, label: "Delete", color: "text-red-600", onClick: () => onDelete(memo._id) },
-  ];
+          const token = localStorage.getItem("token");
+
+          const res = await axios.post(
+            "/api/email",
+            {
+              type: "credit-memo",
+              id: memo._id,
+            },
+            {
+              headers: {
+                Authorization: `Bearer ${token}`,
+              },
+            }
+          );
+
+          if (res.data.success) {
+            toast.success("Email sent!");
+          } else {
+            toast.error(res.data.message || "Failed to send email.");
+          }
+        } catch (error) {
+          console.error(error);
+          toast.error("Email error");
+        }
+      },
+    });
+  }
+
+  // Delete
+  if (can("Credit Memo", "delete")) {
+    actions.push({
+      icon: <FaTrash />,
+      label: "Delete",
+      color: "text-red-600",
+      onClick: () => onDelete(memo._id),
+    });
+  }
 
   return <ActionMenu actions={actions} />;
 }
-
 // 'use client';
 
 // import { useState, useEffect, useMemo, useRef } from 'react';

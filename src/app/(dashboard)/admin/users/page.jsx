@@ -28,6 +28,7 @@ const ROLE_OPTIONS = {
     "Employees",
     "Accounts",
   ],
+
   "Sales Manager": [
     "Sales Quotation",
     "Sales Order",

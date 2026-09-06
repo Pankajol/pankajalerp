@@ -8,11 +8,22 @@ import { v4 as uuidv4 } from "uuid";
 import { toast, ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import { FiTrash2 } from "react-icons/fi";
+import ProtectedPage from "@/components/ProtectedPage";
 import { 
   FaIndustry, FaBox, FaCogs, FaWarehouse, 
   FaCalendarAlt, FaCheck, FaArrowLeft, FaPlus, FaTools 
 } from "react-icons/fa";
 import SalesOrderSearch from "@/components/SalesOrderSearch";
+
+const StableSectionCard = ({ icon: Icon, title, subtitle, children, color = "indigo" }) => (
+  <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden mb-5">
+    <div className={`flex items-center gap-3 px-6 py-4 border-b border-gray-100 bg-${color}-50/40`}>
+      <div className={`w-8 h-8 rounded-lg bg-${color}-100 flex items-center justify-center text-${color}-500`}><Icon className="text-sm" /></div>
+      <div><p className="text-sm font-bold text-gray-900">{title}</p>{subtitle && <p className="text-xs text-gray-400">{subtitle}</p>}</div>
+    </div>
+    <div className="px-6 py-5">{children}</div>
+  </div>
+);
 
 export default function Page() {
   return (
@@ -75,12 +86,12 @@ function ProductionOrderPage() {
           axios.get("/api/ppc/machines", config),
           axios.get("/api/ppc/operators", config),
         ]);
-        setOperationOptions((ops.data.data || ops.data).map(o => ({ label: o.operationName, value: o._id })));
+        setOperationOptions((ops.data.data || ops.data).map(o => ({ label: o.name || o.operationName, value: o._id })));
         setBoms(bom.data.data || bom.data || []);
         setAllItems(itm.data.data || itm.data || []);
         setResources(res.data.data || res.data || []);
-        setMachines((mac.data.data || mac.data).map(m => ({ label: m.machineName, value: m._id })));
-        setOperators((opr.data.data || opr.data).map(o => ({ label: o.operatorName, value: o._id })));
+        setMachines((mac.data.data || mac.data).map(m => ({ label: m.name || m.machineName, value: m._id })));
+        setOperators((opr.data.data || opr.data).map(o => ({ label: o.name || o.operatorName, value: o._id })));
         setWarehouseOptions((wh.data.data || wh.data).map(w => ({ value: w._id, label: w.warehouseName })));
       } finally { setLoadingMaster(false); }
     })();
@@ -141,9 +152,21 @@ function ProductionOrderPage() {
     };
     try {
       const config = { headers: { Authorization: `Bearer ${token}` } };
-      await axios.post("/api/production-orders", payload, config);
+      const orderResponse = await axios.post("/api/production-orders", payload, config);
+      const orderId = orderResponse.data?._id;
+      if (orderId && operationFlow.length) {
+        await axios.post("/api/ppc/jobcards", {
+          productionOrderId: orderId,
+          operations: operationFlow.filter(flow => flow.operation?.value).map(flow => ({
+            operationId: flow.operation.value,
+            qtyToManufacture: quantity,
+            expectedStartDate: flow.expectedStartDate,
+            expectedEndDate: flow.expectedEndDate,
+          })),
+        }, config);
+      }
       toast.success("Production Order Saved Successfully");
-      router.push("/admin/productionorders-list-view");
+      router.push(orderId ? `/admin/ppc/jobcards?productionOrderId=${orderId}` : "/admin/productionorders-list-view");
     } catch (err) { toast.error("Error saving production order"); }
   };
 
@@ -167,6 +190,7 @@ function ProductionOrderPage() {
   );
 
   return (
+    <ProtectedPage module="ProductionOrder" action={id ? "edit" : "create"}>
     <div className="min-h-screen bg-gray-50 py-8 px-4 sm:px-10">
       <div className="max-w-7xl mx-auto">
         
@@ -183,7 +207,7 @@ function ProductionOrderPage() {
           <div className="lg:col-span-2 space-y-6">
             
             {/* Header Data */}
-            <SectionCard icon={FaIndustry} title="Order Configuration" color="indigo">
+            <StableSectionCard icon={FaIndustry} title="Order Configuration" color="indigo">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                 <div className="md:col-span-2"><Lbl text="Linked Sales Order" /><SalesOrderSearch onSelectSalesOrder={setSalesOrder} selectedSalesOrders={salesOrder} /></div>
                 <div>
@@ -195,10 +219,10 @@ function ProductionOrderPage() {
                 </div>
                 <div><Lbl text="Priority" /><select className={fi} value={priority} onChange={(e) => setPriority(e.target.value)}><option>Normal</option><option>Urgent</option><option>Low</option></select></div>
                 <div className="md:col-span-2"><Lbl text="Product Description" /><input className={fi} value={productDesc} onChange={(e) => setProductDesc(e.target.value)} placeholder="Auto-filled from BOM..." /></div>
-                <div><Lbl text="Planned Quantity" req /><input type="number" min={1} className={fi} value={quantity} onChange={(e) => setQuantity(+e.target.value)} /></div>
+                <div><Lbl text="Planned Quantity" req /><input type="number" min={1} className={fi} value={quantity} onChange={(e) => setQuantity(e.target.value === "" ? "" : Number(e.target.value))} /></div>
                 <div><Lbl text="Production Date" req /><input type="date" className={fi} value={productionDate} onChange={(e) => setProductionDate(e.target.value)} /></div>
               </div>
-            </SectionCard>
+            </StableSectionCard>
 
             {/* Materials & Components Table */}
             <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
@@ -239,7 +263,7 @@ function ProductionOrderPage() {
 
           {/* Operational Flow Sidebar */}
           <div className="space-y-6">
-            <SectionCard icon={FaCogs} title="Process Routing" subtitle="Manufacturing workflow steps" color="amber">
+            <StableSectionCard icon={FaCogs} title="Process Routing" subtitle="Manufacturing workflow steps" color="amber">
               <div className="space-y-4">
                 {operationFlow.map((flow, idx) => (
                   <div key={flow.id} className="p-4 rounded-xl border border-amber-100 bg-amber-50/30 space-y-3 relative group">
@@ -254,7 +278,7 @@ function ProductionOrderPage() {
                 ))}
                 <button onClick={() => setOperationFlow([...operationFlow, { id: uuidv4(), operation: null, machine: null, operator: null, expectedStartDate: "" }])} className="w-full py-3 border-2 border-dashed border-amber-200 rounded-xl text-amber-600 font-bold text-xs hover:bg-amber-50 transition-all flex items-center justify-center gap-2"><FaPlus size={10} /> Add Process Step</button>
               </div>
-            </SectionCard>
+            </StableSectionCard>
 
             {/* Quick Summary Sidebar Card */}
             <div className="bg-indigo-900 rounded-3xl p-6 text-white shadow-xl shadow-indigo-100">
@@ -274,6 +298,7 @@ function ProductionOrderPage() {
       </div>
       <ToastContainer position="bottom-right" theme="colored" />
     </div>
+    </ProtectedPage>
   );
 }
 

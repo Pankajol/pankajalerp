@@ -1,3 +1,8 @@
+
+
+
+
+
 import { NextResponse } from "next/server";
 import connectDB from "@/lib/db";
 import ProductionOrder from "@/models/ProductionOrder";
@@ -11,71 +16,10 @@ import JobCard from "@/models/ppc/JobCardModel";
 import Machine from "@/models/ppc/machineModel";
 import Operation from "@/models/ppc/operationModel";
 import Operator from "@/models/ppc/operatorModel";
+import Resource from "@/models/ppc/resourceModel"; // ✅ ADD THIS LINE
 
 
 import { getTokenFromHeader, verifyJWT } from "@/lib/auth";
-
-// ✅ Create a new Production Order
-// export async function POST(request) {
-//   await connectDB();
-
-//   try {
-//     const token = getTokenFromHeader(request);
-//     const user = verifyJWT(token);
-
-//     if (!user?.companyId) {
-//       return NextResponse.json(
-//         { error: "Company ID missing in token" },
-//         { status: 401 }
-//       );
-//     }
-
-//     const data = await request.json();
-
-//     // ✅ Attach company & user info
-//     data.companyId = user.companyId;
-//     data.createdBy = user._id || user.id;
-
-//     // Make warehouse optional
-//     if (!data.warehouse) data.warehouse = null;
-
-//     // Ensure items array is clean
-//     if (Array.isArray(data.items)) {
-//       data.items = data.items.map((it) => ({
-//         ...it,
-//         warehouse: it.warehouse || null,
-//       }));
-//     }
-
-//     // ✅ Save Production Order
-//     const order = new ProductionOrder(data);
-//     const saved = await order.save();
-
-//     // ✅ Update Sales Order if linked
-//     if (saved.salesOrder?.length > 0) {
-//       await SalesOrder.updateMany(
-//         {
-//           _id: { $in: saved.salesOrder },
-//           companyId: user.companyId,
-//         },
-//         {
-//           $set: {
-//             status: "LinkedToProductionOrder",
-//             linkedProductionOrder: saved._id,
-//           },
-//         }
-//       );
-//     }
-
-//     return NextResponse.json(saved, { status: 201 });
-//   } catch (err) {
-//     console.error("❌ Error creating production order:", err);
-//     return NextResponse.json(
-//       { error: err.message || "Failed to create production order" },
-//       { status: 400 }
-//     );
-//   }
-// }
 
 
 
@@ -97,24 +41,24 @@ export async function POST(request) {
     const companyId = user.companyId;
 
     // ✅ Generate unique productionDocNo per company
-    const lastOrder = await ProductionOrder.findOne({ companyId })
-      .sort({ createdAt: -1 })
-      .select("productionDocNo");
-
-    let nextNumber = 1;
-    if (lastOrder?.productionDocNo) {
-      const match = lastOrder.productionDocNo.match(/PROD-(\d+)/);
-      if (match) {
-        nextNumber = parseInt(match[1]) + 1;
-      }
-    }
-
-    // Optional: Use a company code if available
     const companyCode =
       user.companyCode ||
       companyId.slice(-4).toUpperCase(); // fallback to last 4 chars
-
-    const productionDocNo = `PROD-${nextNumber.toString().padStart(4, "0")}-${companyCode}`;
+    // Derive the next number from every company record—not only the newest
+    // one—so imports and old records cannot cause a duplicate document number.
+    const existingNumbers = await ProductionOrder.find({
+      companyId,
+      productionDocNo: { $regex: `^PROD-\\d+-${companyCode}$` },
+    }).select("productionDocNo").lean();
+    let nextNumber = existingNumbers.reduce((highest, order) => {
+      const match = order.productionDocNo?.match(/^PROD-(\d+)-/);
+      return Math.max(highest, Number(match?.[1] || 0));
+    }, 0) + 1;
+    let productionDocNo = `PROD-${String(nextNumber).padStart(4, "0")}-${companyCode}`;
+    while (await ProductionOrder.exists({ productionDocNo })) {
+      nextNumber += 1;
+      productionDocNo = `PROD-${String(nextNumber).padStart(4, "0")}-${companyCode}`;
+    }
 
     // ✅ Attach company & user info
     data.companyId = companyId;
@@ -162,6 +106,37 @@ export async function POST(request) {
 }
 
 // ✅ Get all Production Orders for the company
+// export async function GET(request) {
+//   await connectDB();
+
+//   try {
+//     const token = getTokenFromHeader(request);
+//     const user = verifyJWT(token);
+
+//     if (!user?.companyId) {
+//       return NextResponse.json(
+//         { error: "Company ID missing in token" },
+//         { status: 401 }
+//       );
+//     }
+//     const orders = await ProductionOrder.find({ companyId: user.companyId })
+//       .populate({ path: "operationFlow.operation", strictPopulate: false })
+//       .populate({ path: "operationFlow.machine", strictPopulate: false })
+//       .populate({ path: "operationFlow.operator", strictPopulate: false })
+//       .lean();
+
+//     return NextResponse.json(orders, { status: 200 });
+//   } catch (err) {
+//     console.error("❌ Error fetching production orders:", err);
+//     return NextResponse.json(
+//       { error: err.message || "Failed to fetch production orders" },
+//       { status: 400 }
+//     );
+//   }
+// }
+
+
+
 export async function GET(request) {
   await connectDB();
 
@@ -171,21 +146,42 @@ export async function GET(request) {
 
     if (!user?.companyId) {
       return NextResponse.json(
-        { error: "Company ID missing in token" },
+        { success: false, error: "Company ID missing in token" },
         { status: 401 }
       );
     }
-const orders = await ProductionOrder.find({ companyId: user.companyId })
-  .populate("operationFlow.operation")  
-  .populate("operationFlow.machine")    
-  .populate("operationFlow.operator")   
-  .lean();
 
-    return NextResponse.json(orders, { status: 200 });
+    const { searchParams } = new URL(request.url);
+    const limit = parseInt(searchParams.get("limit")) || 100;
+    // Paginate when requested by searchable forms; preserve existing callers.
+    const paginated = searchParams.has("page");
+    const page = Math.max(parseInt(searchParams.get("page")) || 1, 1);
+    const pageSize = paginated ? Math.min(Math.max(limit, 1), 100) : limit;
+    const status = searchParams.get("status") || "";
+    const filter = { companyId: user.companyId };
+    if (status) filter.status = status;
+
+    const orders = await ProductionOrder.find(filter)
+      .populate({ path: "operationFlow.operation", strictPopulate: false })
+      .populate({ path: "operationFlow.machine", strictPopulate: false })
+      .populate({ path: "operationFlow.operator", strictPopulate: false })
+      .populate({ path: "resources", strictPopulate: false }) // ← safe populate
+      .skip(paginated ? (page - 1) * pageSize : 0)
+      .limit(pageSize)
+      .sort({ createdAt: -1, _id: -1 })
+      .lean();
+
+    const meta = paginated
+      ? { page, limit: pageSize, pages: Math.ceil(await ProductionOrder.countDocuments(filter) / pageSize) }
+      : undefined;
+    return NextResponse.json(
+      { success: true, data: orders, ...(meta ? { meta } : {}) },
+      { status: 200 }
+    );
   } catch (err) {
     console.error("❌ Error fetching production orders:", err);
     return NextResponse.json(
-      { error: err.message || "Failed to fetch production orders" },
+      { success: false, error: err.message || "Failed to fetch production orders" },
       { status: 400 }
     );
   }
@@ -194,314 +190,4 @@ const orders = await ProductionOrder.find({ companyId: user.companyId })
 
 
 
-// import { NextResponse } from 'next/server';
-// import connectDB from '@/lib/db';
-// import ProductionOrder from '@/models/ProductionOrder';
-// import StockMovement from '@/models/StockMovement'; // ✅ added
-// import { getTokenFromHeader, verifyJWT } from '@/lib/auth';
-// import salesOrder from '@/models/SalesOrder';
-// import BOM from '@/models/BOM';
-// import Item from '@/models/ItemModels';
-// import Warehouse from '@/models/warehouseModels';
-// import CompanyUser from '@/models/CompanyUser';
 
-
-
-
-
-
-
-// export async function POST(request) {
-//   await connectDB();
-
-//   try {
-//     // ✅ Extract and verify token
-//     const token = getTokenFromHeader(request);
-//     const user = verifyJWT(token); // decoded payload
-
-//     if (!user?.companyId) {
-//       return NextResponse.json(
-//         { error: "Company ID missing in token" },
-//         { status: 401 }
-//       );
-//     }
-
-//     const data = await request.json();
-
-//     // ✅ Attach company & user info
-//     data.companyId = user.companyId;
-//     data.createdBy = user._id || user.id;
-
-//     const order = new ProductionOrder(data);
-//     const saved = await order.save();
-
-//     // ✅ Record stock movements for BOM items (consumption)
-//     if (saved.bomId) {
-//       const bomDoc = await BOM.findById(saved.bomId).populate("items.item");
-
-//       if (bomDoc && Array.isArray(bomDoc.items)) {
-//         for (const bomItem of bomDoc.items) {
-//           const { item, quantity, warehouse } = bomItem;
-
-//           await StockMovement.create({
-//             companyId: user.companyId,
-//             createdBy: user._id || user.id,
-//             item,
-//             warehouse,
-//             movementType: "OUT",
-//             quantity: quantity, // planned consumption for production
-//             reference: saved._id.toString(),
-//             remarks: `Raw material consumption for Production Order ${saved._id}`,
-//           });
-//         }
-//       }
-//     }
-
-//     // ✅ Update SalesOrder status if linked
-//     if (saved.salesOrder) {
-//       const salesOrdersToUpdate = Array.isArray(saved.salesOrder)
-//         ? saved.salesOrder
-//         : [saved.salesOrder];
-
-//       console.log("Sales Orders to update:", salesOrdersToUpdate);
-
-//       const res = await salesOrder.updateMany(
-//         { _id: { $in: salesOrdersToUpdate }, companyId: user.companyId },
-//         {
-//           $set: {
-//             status: "LinkedToProductionOrder",
-//             linkedProductionOrder: saved._id, // 👈 link back to the ProductionOrder
-//           },
-//         }
-//       );
-
-//       console.log("SalesOrder update result:", res);
-//     }
-
-//     return NextResponse.json(saved, { status: 201 });
-//   } catch (err) {
-//     console.error("Error creating production order:", err);
-//     return NextResponse.json(
-//       { error: err.message || "Failed to create production order" },
-//       { status: 400 }
-//     );
-//   }
-// }
-
-
-
-
-
-// ========================= GET =========================
-
-// export async function GET(request) {
-//   await connectDB();
-
-//   try {
-//     const token = getTokenFromHeader(request);
-//     const user = verifyJWT(token);
-
-//     console.log("Decoded JWT user:", user); // ✅ debug
-
-//     if (!user || !user.companyId) {
-//       return NextResponse.json(
-//         { error: 'Unauthorized - companyId missing in token' },
-//         { status: 401 }
-//       );
-//     }
-
-//     const orders = await ProductionOrder.find({ companyId: user.companyId })
-//       // .populate("bomId")
-//       // .populate("warehouse")
-//       // .populate("items.item")
-//       // .populate("createdBy");
-
-//     return NextResponse.json(orders, { status: 200 });
-//   } catch (err) {
-//     console.error('Error fetching production orders:', err);
-//     return NextResponse.json(
-//       { error: 'Failed to fetch production orders' },
-//       { status: 500 }
-//     );
-//   }
-// }
-
-
-
-
-
-// ========================= POST =========================
-// export async function POST(request) {
-//   await connectDB();
-
-//   try {
-//     // ✅ Extract and verify token
-//     const token = getTokenFromHeader(request);
-//     const user = verifyJWT(token); // decoded payload
-
-//     if (!user?.companyId) {
-//       return NextResponse.json(
-//         { error: 'Company ID missing in token' },
-//         { status: 401 }
-//       );
-//     }
-
-//     const data = await request.json();
-
-//     // ✅ Attach company & user info
-//     data.company = user.companyId;
-//     data.createdBy = user._id || user.id;
-
-//     const order = new ProductionOrder(data);
-//     const saved = await order.save();
-
-//     // ✅ Record stock movements for BOM items (consumption)
-//     if (saved.bom && Array.isArray(saved.bom.items)) {
-//       for (const bomItem of saved.bom.items) {
-//         const { item, quantity, warehouse } = bomItem;
-
-//         await StockMovement.create({
-//           companyId: user.companyId,
-//           createdBy: user._id || user.id,
-//           item,
-//           warehouse,
-//           movementType: 'OUT',
-//           quantity: quantity, // planned consumption for production
-//           reference: saved._id.toString(),
-//           remarks: `Raw material consumption for Production Order ${saved._id}`,
-//         });
-//       }
-//     }
-//     // ✅ Update SalesOrder status if linked
-//     if (saved.salesOrder) {
-//   const salesOrdersToUpdate = Array.isArray(saved.salesOrder)
-//     ? saved.salesOrder
-//     : [saved.salesOrder];
-
-//   await salesOrder.updateMany(
-//     { _id: { $in: salesOrdersToUpdate }, companyId: user.companyId },
-//     { $set: { status: 'LinkedToProductionOrder' } }
-//   );
-// }
-
-
-
-//     return NextResponse.json(saved, { status: 201 });
-//   } catch (err) {
-//     console.error('Error creating production order:', err);
-//     return NextResponse.json(
-//       { error: err.message || 'Failed to create production order' },
-//       { status: 400 }
-//     );
-//   }
-// }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-// import { NextResponse } from 'next/server';
-// import connectDB from '@/lib/db';
-// import ProductionOrder from '@/models/ProductionOrder';
-// import { getTokenFromHeader, verifyJWT } from '@/lib/auth';
-
-// // ========================= GET =========================
-// export async function GET(request) {
-//   await connectDB();
-
-//   try {
-//     // ✅ Extract and verify token
-//     const token = getTokenFromHeader(request);
-//     const user = verifyJWT(token); // decoded payload
-
-//     if (!user?.companyId) {
-//       return NextResponse.json(
-//         { error: 'Company ID missing in token' },
-//         { status: 401 }
-//       );
-//     }
-
-//     // ✅ Fetch company-wise orders
-//     const orders = await ProductionOrder.find({ company: user.companyId })
-//       .populate('bom')
-//       .sort('-createdAt');
-
-//     return NextResponse.json(orders, { status: 200 });
-//   } catch (err) {
-//     console.error('Error fetching production orders:', err);
-//     return NextResponse.json(
-//       { error: 'Failed to fetch production orders' },
-//       { status: 500 }
-//     );
-//   }
-// }
-
-// // ========================= POST =========================
-// export async function POST(request) {
-//   await connectDB();
-
-//   try {
-//     // ✅ Extract and verify token
-//     const token = getTokenFromHeader(request);
-//     const user = verifyJWT(token); // decoded payload
-
-//     if (!user?.companyId) {
-//       return NextResponse.json(
-//         { error: 'Company ID missing in token' },
-//         { status: 401 }
-//       );
-//     }
-
-//     const data = await request.json();
-
-//     // ✅ Attach company & user info
-//     data.company = user.companyId;
-//     data.createdBy = user._id || user.id;
-
-//     const order = new ProductionOrder(data);
-//     const saved = await order.save();
-
-//     return NextResponse.json(saved, { status: 201 });
-//   } catch (err) {
-//     console.error('Error creating production order:', err);
-//     return NextResponse.json(
-//       { error: err.message || 'Failed to create production order' },
-//       { status: 400 }
-//     );
-//   }
-// }

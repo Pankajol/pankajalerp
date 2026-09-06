@@ -2,14 +2,26 @@
 
 import { useEffect, useState } from "react";
 import axios from "axios";
+import Link from "next/link";
 
 export default function AdminLeavesPage() {
   const [leaves, setLeaves] = useState([]);
+  const [employees, setEmployees] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [savingManual, setSavingManual] = useState(false);
+  const [manual, setManual] = useState({ employeeId: "", fromDate: "", toDate: "", leaveType: "Casual", reason: "" });
 
   useEffect(() => {
     fetchLeaves();
+    fetchEmployees();
   }, []);
+
+  const fetchEmployees = async () => {
+    try {
+      const res = await axios.get("/api/hr/employees", { headers: { Authorization: `Bearer ${localStorage.getItem("token")}` } });
+      if (res.data.success) setEmployees(res.data.data || []);
+    } catch (err) { console.error(err); }
+  };
 
   const fetchLeaves = async () => {
     try {
@@ -27,6 +39,19 @@ export default function AdminLeavesPage() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const submitManualLeave = async (event) => {
+    event.preventDefault();
+    try {
+      setSavingManual(true);
+      await axios.post("/api/hr/leaves", manual, { headers: { Authorization: `Bearer ${localStorage.getItem("token")}` } });
+      setManual({ employeeId: "", fromDate: "", toDate: "", leaveType: "Casual", reason: "" });
+      await fetchLeaves();
+      alert("Manual leave entry added. You can now approve or reject it below.");
+    } catch (err) {
+      alert(err.response?.data?.message || "Could not add manual leave");
+    } finally { setSavingManual(false); }
   };
 
   const handleReject = async (id) => {
@@ -66,9 +91,29 @@ const updateStatus = async (id, status, reason = "") => {
     <div className="p-6">
 
       {/* HEADER */}
-      <h1 className="text-2xl font-bold mb-6">
-        Leave Management (Admin)
-      </h1>
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+        <h1 className="text-2xl font-bold">Leave Management (Admin)</h1>
+        <Link href="/admin/hr/leave-balances" className="rounded-lg border border-blue-600 px-4 py-2 text-sm font-medium text-blue-700 hover:bg-blue-50">
+          Define Employee Leave Allocation
+        </Link>
+      </div>
+
+      <form onSubmit={submitManualLeave} className="mb-6 rounded-xl border bg-white p-5 shadow-sm">
+        <div className="mb-4"><h2 className="font-semibold text-lg">Add Manual Leave</h2><p className="text-sm text-gray-500">Create a leave request for any employee.</p></div>
+        <div className="grid gap-3 md:grid-cols-3">
+          <select required value={manual.employeeId} onChange={(e) => setManual({ ...manual, employeeId: e.target.value })} className="border rounded-lg px-3 py-2">
+            <option value="">Select employee</option>
+            {employees.map((employee) => <option key={employee._id} value={employee._id}>{employee.fullName} {employee.employeeCode ? `(${employee.employeeCode})` : ""}</option>)}
+          </select>
+          <input required type="date" value={manual.fromDate} onChange={(e) => setManual({ ...manual, fromDate: e.target.value })} className="border rounded-lg px-3 py-2" />
+          <input required type="date" min={manual.fromDate || undefined} value={manual.toDate} onChange={(e) => setManual({ ...manual, toDate: e.target.value })} className="border rounded-lg px-3 py-2" />
+          <select value={manual.leaveType} onChange={(e) => setManual({ ...manual, leaveType: e.target.value })} className="border rounded-lg px-3 py-2">
+            {["Casual", "Sick", "Paid", "Unpaid"].map((type) => <option key={type}>{type}</option>)}
+          </select>
+          <input required value={manual.reason} onChange={(e) => setManual({ ...manual, reason: e.target.value })} placeholder="Reason" className="border rounded-lg px-3 py-2 md:col-span-2" />
+        </div>
+        <button disabled={savingManual} className="mt-4 rounded-lg bg-blue-600 px-4 py-2 text-white disabled:opacity-50">{savingManual ? "Adding…" : "Add Manual Leave"}</button>
+      </form>
 
       {/* TABLE */}
       <div className="bg-white shadow rounded-xl overflow-hidden">

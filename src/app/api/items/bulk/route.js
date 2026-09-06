@@ -1,256 +1,454 @@
 import { NextResponse } from "next/server";
 import dbConnect from "@/lib/db.js";
 import Item from "@/models/ItemModels";
+import ItemGroup from "@/models/ItemGroupModels";
 import { getTokenFromHeader, verifyJWT } from "@/lib/auth";
 
-export async function POST(req) {
-  await dbConnect();
+const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const clean = (value) => String(value ?? "").trim();
 
+function numberValue(value, field, errors, { required = false, min = 0 } = {}) {
+  const raw = clean(value);
+  if (!raw) {
+    if (required) errors.push(`${field} is required`);
+    return undefined;
+  }
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed)) {
+    errors.push(`${field} must be a number`);
+    return 0;
+  }
+  if (parsed < min) errors.push(`${field} cannot be less than ${min}`);
+  return parsed;
+}
+
+function optionalBoolean(value, field, errors) {
+  const raw = clean(value).toLowerCase();
+  if (!raw) return undefined;
+  if (["true", "yes", "1", "y"].includes(raw)) return true;
+  if (["false", "no", "0", "n"].includes(raw)) return false;
+  errors.push(`${field} must be true/false, yes/no, or 1/0`);
+  return undefined;
+}
+
+const textileNumberFields = [
+  "count",
+  "denier",
+  "ply",
+  "coneWeight",
+  "gsm",
+  "finishedWidth",
+  "greyWidth",
+  "concentration",
+  "packingCapacity",
+];
+
+const textileTextFields = [
+  "yarnType",
+  "countSystem",
+  "twist",
+  "compositionTemplate",
+  "fabricType",
+  "construction",
+  "widthUom",
+  "finish",
+  "design",
+  "color",
+  "shade",
+  "chemicalType",
+  "hazardClass",
+  "storageInstructions",
+  "packingType",
+  "packingDimensions",
+  "materialGrade",
+];
+
+async function nextItemCode(companyId) {
+  const items = await Item.find({ companyId, itemCode: /^ITEM-\d+$/ })
+    .select("itemCode")
+    .lean();
+  return (
+    items.reduce((max, item) => {
+      const number = Number(item.itemCode.split("-").pop());
+      return Number.isFinite(number) ? Math.max(max, number) : max;
+    }, 0) + 1
+  );
+}
+
+async function ensureItemGroup(name, companyId, createdBy, cache) {
+  const trimmedName = clean(name);
+  if (!trimmedName) return { group: null, created: false };
+  const cacheKey = trimmedName.toLowerCase();
+  if (cache.has(cacheKey)) return cache.get(cacheKey);
+
+  const existing = await ItemGroup.findOne({
+    companyId,
+    name: { $regex: `^${escapeRegex(trimmedName)}$`, $options: "i" },
+  });
+  if (existing) {
+    const result = { group: existing, created: false };
+    cache.set(cacheKey, result);
+    return result;
+  }
+
+  const baseCode =
+    trimmedName
+      .toUpperCase()
+      .replace(/[^A-Z0-9]+/g, "-")
+      .replace(/^-|-$/g, "")
+      .slice(0, 20) || "GROUP";
+  let suffix = 1;
+  let group;
+  while (!group) {
+    const code = suffix === 1 ? baseCode : `${baseCode}-${suffix}`;
+    if (!(await ItemGroup.exists({ code }))) {
+      try {
+        group = await ItemGroup.create({
+          companyId,
+          createdBy,
+          name: trimmedName,
+          code,
+        });
+      } catch (error) {
+        if (error?.code !== 11000) throw error;
+      }
+    }
+    suffix += 1;
+  }
+
+  const result = { group, created: true };
+  cache.set(cacheKey, result);
+  return result;
+}
+
+export async function POST(req) {
   try {
-    // ✅ 1️⃣ Authenticate user
-    const token = getTokenFromHeader(req);
-    if (!token)
+    await dbConnect();
+    const user = verifyJWT(getTokenFromHeader(req));
+    if (!user) {
       return NextResponse.json(
         { success: false, message: "Unauthorized" },
         { status: 401 }
       );
+    }
 
-    const decoded = verifyJWT(token);
-    const companyId = decoded.companyId;
-    const createdBy = decoded.userId;
+    const companyId = user.companyId;
+    const createdBy = user.id || user.userId || user._id;
+    if (!companyId) {
+      return NextResponse.json(
+        { success: false, message: "Company could not be identified" },
+        { status: 400 }
+      );
+    }
 
-    // ✅ 2️⃣ Parse body
     const { items } = await req.json();
     if (!Array.isArray(items) || items.length === 0) {
       return NextResponse.json(
-        { success: false, message: "Invalid or empty items array" },
+        { success: false, message: "The upload contains no item rows" },
+        { status: 400 }
+      );
+    }
+    if (items.length > 5000) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "A maximum of 5,000 rows can be uploaded at once",
+        },
         { status: 400 }
       );
     }
 
     const results = [];
+    const groupCache = new Map();
+    const autoCreatedGroups = new Set();
+    const uploadedCodes = new Set(
+      items.map((row) => clean(row?.itemCode).toUpperCase()).filter(Boolean)
+    );
+    let codeNumber = await nextItemCode(companyId);
     let createdCount = 0;
     let updatedCount = 0;
-    let skippedCount = 0;
 
-    // ✅ 3️⃣ Get last item for auto-code generation
-    const lastItem = await Item.findOne({ companyId }).sort({ createdAt: -1 });
-    let nextCodeNumber = lastItem
-      ? parseInt(lastItem.itemCode?.split("-")[1] || "0", 10) + 1
-      : 1;
-
-    // ✅ 4️⃣ Loop over each row
-    for (let i = 0; i < items.length; i++) {
-      const row = items[i];
+    for (let index = 0; index < items.length; index += 1) {
+      const rowNumber = index + 2;
+      const row = items[index] || {};
       const errors = [];
-
-      // Validation
-      if (!row.itemName) errors.push("itemName missing");
-      if (!row.category) errors.push("category missing");
-      if (!row.unitPrice) errors.push("unitPrice missing");
-
-      if (row.unitPrice && isNaN(parseFloat(row.unitPrice))) {
-        errors.push("unitPrice must be a number");
+      const warnings = [];
+      const itemName = clean(row.itemName);
+      const category = clean(row.category);
+      const itemGroup = clean(row.itemGroup) || category;
+      const itemCodeFromFile = clean(row.itemCode).toUpperCase();
+      const unitPrice = numberValue(row.unitPrice, "unitPrice", errors, {
+        required: true,
+      });
+      const optionalNumbers = {};
+      for (const field of [
+        "salesPrice",
+        "mrp",
+        "quantity",
+        "stockQuantity",
+        "reorderLevel",
+        "leadTime",
+        "gstRate",
+        "cgstRate",
+        "sgstRate",
+        "igstRate",
+      ]) {
+        optionalNumbers[field] = numberValue(row[field], field, errors);
       }
-      if (row.gstRate && isNaN(parseFloat(row.gstRate))) {
-        errors.push("gstRate must be numeric");
+      const quantity = optionalNumbers.quantity;
+      const statusFromFile = clean(row.status).toLowerCase();
+      const booleans = {};
+      for (const field of [
+        "includeGST",
+        "includeIGST",
+        "isStockItem",
+        "inStock",
+        "batchRequired",
+        "hasVariants",
+        "rollTrackingEnabled",
+        "isTextile",
+      ]) {
+        booleans[field] = optionalBoolean(row[field], field, errors);
+      }
+      const isTextile = booleans.isTextile;
+      const textileItemType = clean(row.textileItemType);
+      const validTextileTypes = [
+        "Raw Material",
+        "Yarn",
+        "Grey Fabric",
+        "Dyed Fabric",
+        "Finished Fabric",
+        "Chemical",
+        "Dye",
+        "Packing",
+        "Packing Material",
+        "Trading Item",
+        "Scrap",
+      ];
+
+      if (!itemName) errors.push("itemName is required");
+      if (!category) errors.push("category is required");
+      if (
+        statusFromFile &&
+        !["active", "inactive"].includes(statusFromFile)
+      ) {
+        errors.push("status must be active or inactive");
+      }
+      for (const field of ["gstRate", "cgstRate", "sgstRate", "igstRate"]) {
+        if (optionalNumbers[field] > 100) {
+          errors.push(`${field} cannot exceed 100`);
+        }
+      }
+      if (
+        textileItemType &&
+        !validTextileTypes.includes(textileItemType)
+      ) {
+        errors.push(`invalid textileItemType: ${textileItemType}`);
       }
 
-      const validStatus = ["active", "inactive"];
-      if (row.status && !validStatus.includes(row.status.toLowerCase())) {
-        errors.push("status must be 'active' or 'inactive'");
-      }
-
-      if (errors.length > 0) {
-        skippedCount++;
-        results.push({ row: i + 1, success: false, errors });
+      if (errors.length) {
+        results.push({ row: rowNumber, success: false, errors });
         continue;
       }
 
-      // ✅ Check if item already exists (by name or code)
-      const existingItem = await Item.findOne({
-        companyId,
-        $or: [{ itemName: row.itemName }, { itemCode: row.itemCode }],
-      });
+      try {
+        const [nameMatch, codeMatch] = await Promise.all([
+          Item.findOne({
+            companyId,
+            itemName: { $regex: `^${escapeRegex(itemName)}$`, $options: "i" },
+          }),
+          itemCodeFromFile
+            ? Item.findOne({
+                companyId,
+                itemCode: {
+                  $regex: `^${escapeRegex(itemCodeFromFile)}$`,
+                  $options: "i",
+                },
+              })
+            : null,
+        ]);
+        if (
+          nameMatch &&
+          codeMatch &&
+          String(nameMatch._id) !== String(codeMatch._id)
+        ) {
+          throw new Error(
+            "itemName and itemCode belong to different existing items"
+          );
+        }
+        const existingItem = codeMatch || nameMatch;
 
-      // ✅ Build common data
-      const itemData = {
-        companyId,
-        createdBy,
-        imageUrl: row.imageUrl || "",
-        itemName: row.itemName,
-        category: row.category,
-        unitPrice: parseFloat(row.unitPrice),
-        hsnCode: row.hsnCode || "",
-        gstRate: row.gstRate ? parseFloat(row.gstRate) : 0,
-        unitOfMeasure: row.unitOfMeasure || "NOS",
-        status: row.status?.toLowerCase() || "active",
-        description: row.description || "",
-      };
+        const effectiveIsTextile =
+          isTextile ?? existingItem?.isTextile ?? false;
+        const effectiveTextileType =
+          textileItemType || existingItem?.textileItemType || "";
+        if (effectiveIsTextile && !effectiveTextileType) {
+          results.push({
+            row: rowNumber,
+            success: false,
+            errors: [
+              "textileItemType is required when isTextile is true",
+            ],
+          });
+          continue;
+        }
 
-      if (existingItem) {
-        // ✅ Update existing item
-        Object.assign(existingItem, itemData);
-        await existingItem.save();
-        updatedCount++;
-        results.push({
-          row: i + 1,
-          success: true,
-          action: "updated",
-        });
-      } else {
-        // 
-        // ✅ Create new item with auto code
-        const itemCode = `ITEM-${nextCodeNumber.toString().padStart(4, "0")}`;
-        nextCodeNumber++;
-        itemData.itemCode = itemCode;
-        // Create image Url  AI se and dummy MOdel and 
-        itemData.imageUrl = row.imageUrl || "";
+        const uomFromFile = clean(row.uom);
+        const unitFromFile = clean(row.unit);
+        const uom =
+          uomFromFile || unitFromFile || existingItem?.uom || "NOS";
+        const status = statusFromFile || existingItem?.status || "active";
+        const textileDetails = {};
+        for (const field of textileTextFields) {
+          const value = clean(row[field]);
+          if (value) textileDetails[field] = value;
+        }
+        for (const field of textileNumberFields) {
+          const value = numberValue(row[field], field, errors);
+          if (value !== undefined) textileDetails[field] = value;
+        }
+        if (errors.length) {
+          results.push({ row: rowNumber, success: false, errors });
+          continue;
+        }
 
+        for (const groupName of [...new Set([category, itemGroup])]) {
+          const ensured = await ensureItemGroup(
+            groupName,
+            companyId,
+            createdBy,
+            groupCache
+          );
+          if (ensured.created) {
+            autoCreatedGroups.add(ensured.group.name);
+            warnings.push(`Item group '${ensured.group.name}' was created`);
+          }
+        }
 
-        await Item.create(itemData);
-        createdCount++;
-        results.push({
-          row: i + 1,
-          success: true,
-          action: "created",
-        });
+        const itemData = {
+          companyId,
+          itemName,
+          category,
+          itemGroup,
+          itemType: clean(row.itemType) || existingItem?.itemType || "Product",
+          unitPrice,
+          uom,
+          unit: unitFromFile || existingItem?.unit || uom,
+          status,
+          active: status === "active",
+          isTextile: effectiveIsTextile,
+          textileItemType:
+            isTextile === false && !textileItemType
+              ? ""
+              : effectiveTextileType,
+          stockUom:
+            clean(row.stockUom) || existingItem?.stockUom || uom,
+        };
+        for (const field of [
+          "hsnCode",
+          "description",
+          "imageUrl",
+          "brand",
+          "defaultWarehouse",
+          "manufacturer",
+        ]) {
+          const value = clean(row[field]);
+          if (value) itemData[field] = value;
+        }
+        for (const [field, value] of Object.entries(optionalNumbers)) {
+          if (value !== undefined) itemData[field] = value;
+        }
+        if (quantity === undefined && !existingItem) itemData.quantity = 0;
+        for (const [field, value] of Object.entries(booleans)) {
+          if (value !== undefined) itemData[field] = value;
+        }
+        if (clean(row.tags)) {
+          itemData.tags = clean(row.tags)
+            .split(/[;,]/)
+            .map(clean)
+            .filter(Boolean);
+        }
+        if (Object.keys(textileDetails).length) {
+          itemData.textileDetails = existingItem
+            ? {
+                ...(existingItem.textileDetails?.toObject?.() ||
+                  existingItem.textileDetails || {}),
+                ...textileDetails,
+              }
+            : textileDetails;
+        }
+
+        if (existingItem) {
+          Object.assign(existingItem, itemData);
+          await existingItem.save();
+          updatedCount += 1;
+          results.push({
+            row: rowNumber,
+            success: true,
+            action: "updated",
+            itemCode: existingItem.itemCode,
+            itemName,
+            warnings,
+          });
+        } else {
+          let itemCode = itemCodeFromFile;
+          if (!itemCode) {
+            itemCode = `ITEM-${String(codeNumber).padStart(4, "0")}`;
+            while (
+              uploadedCodes.has(itemCode) ||
+              (await Item.exists({ companyId, itemCode }))
+            ) {
+              codeNumber += 1;
+              itemCode = `ITEM-${String(codeNumber).padStart(4, "0")}`;
+            }
+            codeNumber += 1;
+          }
+          const created = await Item.create({
+            ...itemData,
+            itemCode,
+            createdBy,
+          });
+          createdCount += 1;
+          results.push({
+            row: rowNumber,
+            success: true,
+            action: "created",
+            itemCode: created.itemCode,
+            itemName,
+            warnings,
+          });
+        }
+      } catch (error) {
+        const message =
+          error?.code === 11000
+            ? "itemCode already exists"
+            : error.message || "Row could not be saved";
+        results.push({ row: rowNumber, success: false, errors: [message] });
       }
     }
 
-    // ✅ 5️⃣ Build summary response
-    const message = `Bulk upload complete: ${createdCount} created, ${updatedCount} updated, ${skippedCount} skipped.`;
-
+    const failedCount = results.filter((result) => !result.success).length;
+    const success = createdCount + updatedCount > 0;
     return NextResponse.json({
-      success: true,
-      message,
+      success,
+      message: success
+        ? `Import complete: ${createdCount} created, ${updatedCount} updated, ${failedCount} failed`
+        : `Import failed: all ${failedCount} rows contain errors`,
+      summary: {
+        total: items.length,
+        created: createdCount,
+        updated: updatedCount,
+        failed: failedCount,
+        groupsCreated: autoCreatedGroups.size,
+      },
+      autoCreatedGroups: [...autoCreatedGroups],
       results,
     });
-  } catch (err) {
-    console.error("Item Bulk Upload Error:", err);
+  } catch (error) {
+    console.error("Item Bulk Upload Error:", error);
     return NextResponse.json(
-      { success: false, message: "Server error", error: err.message },
+      { success: false, message: error.message || "Item import failed" },
       { status: 500 }
     );
   }
 }
-
-
-
-
-// import { NextResponse } from "next/server";
-// import dbConnect from "@/lib/db.js";
-// import Item from "@/models/ItemModels"; // ✅ your item schema file
-// import { getTokenFromHeader, verifyJWT } from "@/lib/auth";
-
-// export async function POST(req) {
-//   await dbConnect();
-
-//   try {
-//     // ✅ 1️⃣ Get JWT token
-//     const token = getTokenFromHeader(req);
-//     if (!token)
-//       return NextResponse.json(
-//         { success: false, message: "Unauthorized" },
-//         { status: 401 }
-//       );
-
-//     const decoded = verifyJWT(token);
-//     const companyId = decoded.companyId;
-//     const createdBy = decoded.userId;
-
-//     // ✅ 2️⃣ Parse request body
-//     const { items } = await req.json();
-//     if (!Array.isArray(items) || items.length === 0) {
-//       return NextResponse.json(
-//         { success: false, message: "Invalid or empty items array" },
-//         { status: 400 }
-//       );
-//     }
-
-//     const results = [];
-
-//     // ✅ 3️⃣ Find the last item for auto-code generation
-//     const lastItem = await Item.findOne({ companyId }).sort({ createdAt: -1 });
-//     let nextCodeNumber = lastItem
-//       ? parseInt(lastItem.itemCode?.split("-")[1] || "0", 10) + 1
-//       : 1;
-
-//     // ✅ 4️⃣ Loop through all uploaded items
-//     for (let i = 0; i < items.length; i++) {
-//       const row = items[i];
-//       let errors = [];
-
-//       // ✅ Validation: Required fields
-//       if (!row.itemName) errors.push("itemName missing");
-//       if (!row.category) errors.push("category missing");
-//       if (!row.unitPrice) errors.push("unitPrice missing");
-
-//       // ✅ Validate numeric price
-//       if (row.unitPrice && isNaN(parseFloat(row.unitPrice))) {
-//         errors.push("unitPrice must be a number");
-//       }
-
-//       // ✅ Validate GST rate (if given)
-//       if (row.gstRate && isNaN(parseFloat(row.gstRate))) {
-//         errors.push("gstRate must be numeric");
-//       }
-
-//       // ✅ Validate status
-//       const validStatus = ["active", "inactive"];
-//       if (row.status && !validStatus.includes(row.status.toLowerCase())) {
-//         errors.push("status must be 'active' or 'inactive'");
-//       }
-
-//       if (errors.length > 0) {
-//         results.push({ row: i + 1, success: false, errors });
-//         continue;
-//       }
-
-//       // ✅ Auto-generate item code
-//       const itemCode = `ITEM-${nextCodeNumber
-//         .toString()
-//         .padStart(4, "0")}`;
-//       nextCodeNumber++;
-
-//       // ✅ Build item data
-//       const itemData = {
-//         companyId,
-//         createdBy,
-//         itemCode,
-//         itemName: row.itemName,
-//         category: row.category,
-//         unitPrice: parseFloat(row.unitPrice),
-//         hsnCode: row.hsnCode || "",
-//         gstRate: row.gstRate ? parseFloat(row.gstRate) : null,
-//         unitOfMeasure: row.unitOfMeasure || "NOS",
-//         status: row.status?.toLowerCase() || "active",
-//         description: row.description || "",
-//       };
-
-//       try {
-//         await Item.create(itemData);
-//         results.push({ row: i + 1, success: true });
-//       } catch (err) {
-//         results.push({
-//           row: i + 1,
-//           success: false,
-//           errors: [err.message],
-//         });
-//       }
-//     }
-
-//     // ✅ 5️⃣ Return response with summary
-//     return NextResponse.json({
-//       success: true,
-//       message: "Bulk upload complete",
-//       results,
-//     });
-//   } catch (err) {
-//     console.error("Item Bulk Upload Error:", err);
-//     return NextResponse.json(
-//       { success: false, message: "Server error", error: err.message },
-//       { status: 500 }
-//     );
-//   }
-// }

@@ -4,12 +4,15 @@ import React from "react";
 import CustomerManagement from "@/components/sampleofcurd";
 import { useSearchParams } from "next/navigation";
 import { Suspense } from "react";
+import ProtectedPage from "@/components/ProtectedPage";
 
 function CreateCustomersFormWrapper() {
   return (
+ 
     <Suspense fallback={<div className="text-center py-10">Loading form data...</div>}>
       <CreateCustomersPage />
     </Suspense>
+   
   );
 }
 

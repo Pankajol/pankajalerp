@@ -53,11 +53,7 @@ const JobCardSchema = new Schema(
     completedQty: { type: Number, default: 0 },
 
     // ✅ Updated status values
-    status: {
-      type: String,
-      // enum: ["planned", "in progress", "on_hold", "pending", "completed"],
-      default: "planned",
-    },
+    status: { type: String, enum: ["Planned", "Released", "In Progress", "On Hold", "Completed", "Cancelled"], default: "Planned" },
 
     expectedStartDate: { type: Date },
     expectedEndDate: { type: Date },
@@ -78,6 +74,8 @@ const JobCardSchema = new Schema(
   },
   { timestamps: true }
 );
+
+JobCardSchema.index({ companyId: 1, jobCardNo: 1 }, { unique: true });
 
 // ✅ Prevent model overwrite in hot reload
 export default mongoose.models.JobCard ||

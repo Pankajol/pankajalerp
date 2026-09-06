@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import axios from "axios";
 import ItemSection from "@/components/ItemSection";
 import SupplierSearch from "@/components/SupplierSearch";
+import ProtectedPage from "@/components/ProtectedPage";
 import { Suspense } from "react";
 import { FaUser } from "react-icons/fa";
 import DatePicker from "react-datepicker";
@@ -402,6 +403,7 @@ useEffect(() => {
   if (error) return <div className="p-8 text-red-600">{error}</div>;
 
   return (
+    <ProtectedPage module="PurchaseQuotation" action={editId ? "edit" : "add"}>
     <div className="m-11 p-5 shadow-xl">
       <h1 className="text-2xl font-bold mb-4">
         {editId ? "Edit Purchase Quotation" : "Create Purchase Quotation"}
@@ -542,6 +544,7 @@ useEffect(() => {
         </button>
       </div>
     </div>
+    </ProtectedPage>
   );
 }
 

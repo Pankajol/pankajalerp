@@ -1,6 +1,6 @@
 // components/ui/SearchableSelect.js
 "use client";
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect, useRef } from "react";
 import { FiChevronDown, FiChevronUp } from "react-icons/fi";
 
 export function SearchableSelect({
@@ -13,6 +13,15 @@ export function SearchableSelect({
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
+  const rootRef = useRef(null);
+
+  useEffect(() => {
+    const close = event => {
+      if (!rootRef.current?.contains(event.target)) setIsOpen(false);
+    };
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, []);
 
   const filtered = useMemo(
     () =>
@@ -31,8 +40,11 @@ export function SearchableSelect({
   };
 
   return (
-    <div className={`relative ${className}`}>
-      <div
+    <div ref={rootRef} className={`relative ${className}`}>
+      <button
+        type="button"
+        aria-haspopup="listbox"
+        aria-expanded={isOpen}
         className={`w-full py-2.5 px-4 rounded-xl border text-sm flex items-center justify-between cursor-pointer ${
           disabled
             ? "bg-gray-100 text-gray-400 cursor-not-allowed"
@@ -48,7 +60,7 @@ export function SearchableSelect({
         ) : (
           <FiChevronDown className="text-gray-400" />
         )}
-      </div>
+      </button>
       {isOpen && !disabled && (
         <div className="absolute z-20 mt-1 w-full bg-white border border-gray-200 rounded-xl shadow-lg max-h-48 overflow-y-auto">
           <div className="p-2">
@@ -57,6 +69,7 @@ export function SearchableSelect({
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               placeholder="Search..."
+              autoFocus
               className="w-full py-1.5 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-indigo-400"
               onClick={(e) => e.stopPropagation()}
             />
@@ -70,6 +83,8 @@ export function SearchableSelect({
                 className={`px-4 py-2 text-sm cursor-pointer hover:bg-indigo-50 ${
                   opt.value === value ? "bg-indigo-50 font-semibold" : ""
                 }`}
+                role="option"
+                aria-selected={opt.value === value}
                 onClick={() => handleSelect(opt)}
               >
                 {opt.label}

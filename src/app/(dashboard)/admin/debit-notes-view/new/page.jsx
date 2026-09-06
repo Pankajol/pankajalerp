@@ -3,6 +3,8 @@
 import React, { useState, useEffect, useCallback, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import axios from "axios";
+import ProtectedPage from "@/components/ProtectedPage";
+
 import ItemSection from "@/components/ItemSection";
 import SupplierSearch from "@/components/SupplierSearch";
 import { toast, ToastContainer } from "react-toastify";
@@ -157,9 +159,11 @@ function getVariantImageUrl(item, variantSku) {
 
 export default function DebitNoteFormWrapper() {
   return (
+    <ProtectedPage module="DebitNote" action="create">
     <Suspense fallback={<div className="p-10 text-center text-gray-400">Loading...</div>}>
       <DebitNoteForm />
     </Suspense>
+    </ProtectedPage>
   );
 }
 

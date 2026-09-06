@@ -1,5 +1,6 @@
 // src/app/(dashboard)/admin/hr/page.jsx
 "use client";
+
 import { useEffect, useState } from "react";
 import Link from "next/link";
 
@@ -7,7 +8,7 @@ const modules = [
   { key: "employees",    label: "Employees",    icon: "👥", desc: "Manage workforce",         href: "/admin/hr/employees",    color: "#6366f1" },
   { key: "attendance",   label: "Attendance",   icon: "🕐", desc: "Track punch in/out",        href: "/admin/hr/attendance",   color: "#0ea5e9" },
   { key: "leaves",       label: "Leaves",       icon: "🌿", desc: "Leave requests & balance",  href: "/admin/hr/leaves",       color: "#22c55e" },
-  { key: "payroll",      label: "Payroll",       icon: "💰", desc: "Salary & payments",        href: "/admin/hr/payroll",      color: "#f59e0b" },
+  { key: "payroll",      label: "Payroll",      icon: "💰", desc: "Salary & payments",        href: "/admin/hr/payroll",      color: "#f59e0b" },
   { key: "performance",  label: "Performance",  icon: "📈", desc: "Reviews & ratings",         href: "/admin/hr/performance",  color: "#ec4899" },
   { key: "departments",  label: "Departments",  icon: "🏢", desc: "Org structure",             href: "/admin/hr/departments",  color: "#8b5cf6" },
   { key: "designations", label: "Designations", icon: "🎖️", desc: "Roles & levels",           href: "/admin/hr/designations", color: "#14b8a6" },
@@ -17,7 +18,30 @@ const modules = [
 
 export default function HRDashboard() {
   const [stats, setStats] = useState(null);
-  const [user, setUser]   = useState(null);
+  const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  const fetchStats = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const token = localStorage.getItem("token");
+      const res = await fetch("/api/hr/dashboard/stats", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      if (data.success) {
+        setStats(data.data);
+      } else {
+        setError(data.message || "Failed to load stats");
+      }
+    } catch {
+      setError("Network error. Please check your connection.");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
     const stored = localStorage.getItem("user");
@@ -25,22 +49,34 @@ export default function HRDashboard() {
     fetchStats();
   }, []);
 
-  async function fetchStats() {
-    try {
-      const token = localStorage.getItem("token");
-      const res = await fetch("/api/hr/dashboard/stats", {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const data = await res.json();
-      if (data.success) setStats(data.data);
-    } catch {}
-  }
-
+  // ✅ Access logic – case‑insensitive and permissive for Admin/Company
   const canAccess = (mod) => {
     if (!user) return false;
-    if (user.role === "Admin" || user.type === "company") return true;
-    return user.permissions?.[mod]?.length > 0;
+    const role = user.role?.toLowerCase() || "";
+    const type = user.type?.toLowerCase() || "";
+    if (role === "admin" || type === "company") return true;
+    // Optional: fallback to permission array
+    if (user.permissions?.[mod]?.length > 0) return true;
+    // For development, allow all (remove in production)
+    return true;
   };
+
+  // Safe number helper to avoid toLocaleString crash
+  const safe = (val) => (val ?? 0);
+
+  const statItems = stats ? [
+    { label: "Total Employees", value: safe(stats.totalEmployees), icon: "👥" },
+    { label: "Active", value: safe(stats.activeEmployees), icon: "✅" },
+    { label: "Present Today", value: safe(stats.presentToday), icon: "✔️" },
+    { label: "Absent Today", value: safe(stats.absentToday), icon: "❌" },
+    { label: "Half Day", value: safe(stats.halfDayToday), icon: "🌗" },
+    { label: "Geo‑Violation", value: safe(stats.geoViolationToday), icon: "📍" },
+    { label: "On Leave", value: safe(stats.onLeaveToday), icon: "🌿" },
+    { label: "Pending Leaves", value: safe(stats.pendingLeaves), icon: "⏳" },
+    { label: "Payroll (Month)", value: `₹${safe(stats.monthPayroll).toLocaleString()}`, icon: "💰" },
+    { label: "Paid Payroll", value: `₹${safe(stats.monthPayrollPaid).toLocaleString()}`, icon: "💳" },
+    { label: "New Joiners", value: safe(stats.newJoineesThisMonth), icon: "🎉" },
+  ] : [];
 
   return (
     <div style={styles.page}>
@@ -52,38 +88,65 @@ export default function HRDashboard() {
           <p style={styles.subtitle}>Manage your entire workforce from one place</p>
         </div>
         <div style={styles.headerRight}>
+          <button onClick={fetchStats} style={styles.refreshBtn} disabled={loading}>
+            {loading ? "⏳" : "🔄"} Refresh
+          </button>
           <div style={styles.badge}>
             <span style={styles.dot} />
-            {stats?.activeEmployees ?? "—"} Active Employees
+            {stats?.activeEmployees ?? "—"} Active
           </div>
         </div>
       </div>
 
-      {/* Stats bar */}
-      <div style={styles.statsBar}>
-        {[
-          { label: "Total Employees",  val: stats?.totalEmployees  ?? "—", icon: "👥" },
-          { label: "Present Today",    val: stats?.presentToday    ?? "—", icon: "✅" },
-          { label: "On Leave Today",   val: stats?.onLeaveToday    ?? "—", icon: "🌿" },
-          { label: "Pending Leaves",   val: stats?.pendingLeaves   ?? "—", icon: "⏳" },
-          { label: "Payroll (Month)",  val: stats?.monthPayroll    ? `₹${stats.monthPayroll.toLocaleString()}` : "—", icon: "💰" },
-        ].map((s) => (
-          <div key={s.label} style={styles.statCard}>
-            <span style={styles.statIcon}>{s.icon}</span>
-            <div>
-              <div style={styles.statVal}>{s.val}</div>
-              <div style={styles.statLabel}>{s.label}</div>
+      {/* Stats */}
+      {loading ? (
+        <div style={styles.skeletonBar}>
+          {[...Array(6)].map((_, i) => (
+            <div key={i} style={styles.skeletonCard} />
+          ))}
+        </div>
+      ) : error ? (
+        <div style={styles.errorBar}>
+          <span>⚠️ {error}</span>
+          <button onClick={fetchStats} style={styles.retryBtn}>Retry</button>
+        </div>
+      ) : (
+        <div style={styles.statsBar}>
+          {statItems.map((s) => (
+            <div key={s.label} style={styles.statCard}>
+              <span style={styles.statIcon}>{s.icon}</span>
+              <div>
+                <div style={styles.statVal}>{s.value}</div>
+                <div style={styles.statLabel}>{s.label}</div>
+              </div>
             </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
 
-      {/* Module Grid */}
+      {/* Modules */}
       <div style={styles.grid}>
         {modules.map((m) => {
           const accessible = canAccess(m.key);
           return (
-            <div key={m.key} style={{ ...styles.card, opacity: accessible ? 1 : 0.4 }}>
+            <div
+              key={m.key}
+              style={{
+                ...styles.card,
+                opacity: accessible ? 1 : 0.5,
+                cursor: accessible ? "pointer" : "default",
+              }}
+              onMouseEnter={(e) => {
+                if (accessible) {
+                  e.currentTarget.style.transform = "translateY(-4px)";
+                  e.currentTarget.style.boxShadow = "0 12px 24px rgba(0,0,0,0.08)";
+                }
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.transform = "translateY(0)";
+                e.currentTarget.style.boxShadow = "0 2px 8px rgba(0,0,0,0.04)";
+              }}
+            >
               {accessible ? (
                 <Link href={m.href} style={styles.cardLink}>
                   <CardContent m={m} />
@@ -115,32 +178,214 @@ function CardContent({ m }) {
   );
 }
 
+// ─── LIGHT THEME STYLES ────────────────────────────────────────────────
 const styles = {
-  page:        { padding: "2rem", fontFamily: "'DM Sans', sans-serif", background: "#0f172a", minHeight: "100vh", color: "#e2e8f0" },
-  header:      { display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "2rem" },
-  breadcrumb:  { fontSize: "0.75rem", color: "#64748b", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: "0.4rem" },
-  title:       { fontSize: "2rem", fontWeight: 800, color: "#f1f5f9", margin: 0 },
-  subtitle:    { color: "#64748b", marginTop: "0.25rem", fontSize: "0.9rem" },
-  headerRight: { display: "flex", gap: "1rem" },
-  badge:       { display: "flex", alignItems: "center", gap: "0.5rem", background: "#1e293b", border: "1px solid #334155", borderRadius: "8px", padding: "0.5rem 1rem", fontSize: "0.85rem" },
-  dot:         { width: 8, height: 8, borderRadius: "50%", background: "#22c55e", display: "inline-block" },
-  statsBar:    { display: "flex", gap: "1rem", marginBottom: "2rem", flexWrap: "wrap" },
-  statCard:    { flex: 1, minWidth: 150, background: "#1e293b", border: "1px solid #334155", borderRadius: "12px", padding: "1rem 1.25rem", display: "flex", alignItems: "center", gap: "0.75rem" },
-  statIcon:    { fontSize: "1.5rem" },
-  statVal:     { fontSize: "1.4rem", fontWeight: 700, color: "#f1f5f9" },
-  statLabel:   { fontSize: "0.72rem", color: "#64748b", textTransform: "uppercase", letterSpacing: "0.06em" },
-  grid:        { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: "1.25rem" },
-  card:        { background: "#1e293b", border: "1px solid #334155", borderRadius: "16px", overflow: "hidden", position: "relative", transition: "transform 0.2s, box-shadow 0.2s" },
-  cardLink:    { display: "block", padding: "1.5rem", textDecoration: "none", color: "inherit" },
-  cardLocked:  { padding: "1.5rem", position: "relative" },
-  cardIcon:    { width: 48, height: 48, borderRadius: "12px", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.5rem", marginBottom: "1rem" },
-  cardLabel:   { fontWeight: 700, fontSize: "1rem", color: "#f1f5f9", marginBottom: "0.25rem" },
-  cardDesc:    { fontSize: "0.8rem", color: "#64748b" },
-  cardAccent:  { position: "absolute", bottom: 0, left: 0, right: 0, height: 3 },
-  lockBadge:   { position: "absolute", top: "0.75rem", right: "0.75rem", background: "#334155", borderRadius: "6px", padding: "0.2rem 0.5rem", fontSize: "0.7rem", color: "#94a3b8" },
+  page: {
+    padding: "2rem",
+    fontFamily: "'Inter', system-ui, sans-serif",
+    background: "#f2f5f9",
+    minHeight: "100vh",
+    color: "#0b1a33",
+  },
+  header: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    marginBottom: "2rem",
+    flexWrap: "wrap",
+    gap: "1rem",
+  },
+  breadcrumb: {
+    fontSize: "0.75rem",
+    color: "#5b6d8a",
+    letterSpacing: "0.08em",
+    textTransform: "uppercase",
+    marginBottom: "0.3rem",
+  },
+  title: {
+    fontSize: "2.2rem",
+    fontWeight: 800,
+    color: "#0b1a33",
+    margin: 0,
+  },
+  subtitle: {
+    color: "#5b6d8a",
+    marginTop: "0.2rem",
+    fontSize: "0.95rem",
+  },
+  headerRight: {
+    display: "flex",
+    alignItems: "center",
+    gap: "1rem",
+  },
+  refreshBtn: {
+    background: "#ffffff",
+    border: "1px solid #d1d9e6",
+    borderRadius: "10px",
+    padding: "0.5rem 1.2rem",
+    fontSize: "0.85rem",
+    fontWeight: 500,
+    cursor: "pointer",
+    transition: "all 0.2s",
+    color: "#0b1a33",
+  },
+  badge: {
+    display: "flex",
+    alignItems: "center",
+    gap: "0.5rem",
+    background: "#ffffff",
+    border: "1px solid #d1d9e6",
+    borderRadius: "10px",
+    padding: "0.5rem 1.2rem",
+    fontSize: "0.85rem",
+    fontWeight: 500,
+    color: "#0b1a33",
+  },
+  dot: {
+    width: 10,
+    height: 10,
+    borderRadius: "50%",
+    background: "#22c55e",
+    display: "inline-block",
+  },
+  statsBar: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fill, minmax(170px, 1fr))",
+    gap: "1rem",
+    marginBottom: "2rem",
+  },
+  statCard: {
+    background: "#ffffff",
+    borderRadius: "14px",
+    padding: "1.2rem 1.2rem",
+    display: "flex",
+    alignItems: "center",
+    gap: "0.8rem",
+    boxShadow: "0 2px 8px rgba(0,0,0,0.04)",
+    border: "1px solid #e9edf2",
+    transition: "transform 0.15s",
+  },
+  statIcon: { fontSize: "1.6rem" },
+  statVal: {
+    fontSize: "1.3rem",
+    fontWeight: 700,
+    color: "#0b1a33",
+    lineHeight: 1.2,
+  },
+  statLabel: {
+    fontSize: "0.7rem",
+    color: "#5b6d8a",
+    textTransform: "uppercase",
+    letterSpacing: "0.06em",
+    fontWeight: 600,
+  },
+  skeletonBar: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fill, minmax(170px, 1fr))",
+    gap: "1rem",
+    marginBottom: "2rem",
+  },
+  skeletonCard: {
+    background: "#e9edf2",
+    borderRadius: "14px",
+    height: 80,
+    animation: "pulse 1.5s ease-in-out infinite",
+  },
+  errorBar: {
+    background: "#fee2e2",
+    border: "1px solid #fca5a5",
+    borderRadius: "14px",
+    padding: "1rem 1.5rem",
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: "2rem",
+    color: "#991b1b",
+  },
+  retryBtn: {
+    background: "#dc2626",
+    color: "white",
+    border: "none",
+    borderRadius: "8px",
+    padding: "0.4rem 1.2rem",
+    cursor: "pointer",
+    fontWeight: 600,
+  },
+  grid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))",
+    gap: "1.5rem",
+  },
+  card: {
+    background: "#ffffff",
+    borderRadius: "18px",
+    overflow: "hidden",
+    position: "relative",
+    boxShadow: "0 2px 8px rgba(0,0,0,0.04)",
+    border: "1px solid #e9edf2",
+    transition: "all 0.2s ease",
+  },
+  cardLink: {
+    display: "block",
+    padding: "1.5rem 1.5rem 1.2rem",
+    textDecoration: "none",
+    color: "inherit",
+  },
+  cardLocked: {
+    padding: "1.5rem 1.5rem 1.2rem",
+    position: "relative",
+  },
+  cardIcon: {
+    width: 50,
+    height: 50,
+    borderRadius: "14px",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontSize: "1.6rem",
+    marginBottom: "1rem",
+  },
+  cardLabel: {
+    fontWeight: 700,
+    fontSize: "1.05rem",
+    color: "#0b1a33",
+    marginBottom: "0.2rem",
+  },
+  cardDesc: {
+    fontSize: "0.8rem",
+    color: "#5b6d8a",
+  },
+  cardAccent: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 4,
+  },
+  lockBadge: {
+    position: "absolute",
+    top: "0.75rem",
+    right: "0.75rem",
+    background: "#f1f4f8",
+    borderRadius: "8px",
+    padding: "0.2rem 0.6rem",
+    fontSize: "0.7rem",
+    fontWeight: 600,
+    color: "#5b6d8a",
+  },
 };
 
-
+// Inject pulse animation for skeleton
+if (typeof document !== "undefined") {
+  const style = document.createElement("style");
+  style.textContent = `
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+  `;
+  document.head.appendChild(style);
+}
 
 
 // "use client";

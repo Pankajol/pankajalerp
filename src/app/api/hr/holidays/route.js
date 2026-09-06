@@ -33,6 +33,8 @@ export async function POST(req) {
       return NextResponse.json({ success: false, message: "Forbidden" }, { status: 403 });
 
     const body = await req.json();
+    if (!body.title?.trim() || !/^\d{4}-\d{2}-\d{2}$/.test(body.date || "")) return NextResponse.json({ success: false, message: "Title and a valid date (YYYY-MM-DD) are required" }, { status: 400 });
+    if (await Holiday.findOne({ companyId: user.companyId, date: body.date })) return NextResponse.json({ success: false, message: "A holiday already exists on this date" }, { status: 409 });
     const holiday = await Holiday.create({ ...body, companyId: user.companyId });
     return NextResponse.json({ success: true, data: holiday }, { status: 201 });
   } catch (err) {

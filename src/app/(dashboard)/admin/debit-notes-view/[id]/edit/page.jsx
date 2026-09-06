@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { useRouter, useParams } from "next/navigation";
 import axios from "axios";
+import ProtectedPage from "@/components/ProtectedPage";
 import SupplierSearch from "@/components/SupplierSearch";
 import ItemSection from "@/components/ItemSection";
 import { toast, ToastContainer } from "react-toastify";
@@ -189,6 +190,7 @@ export default function DebitNoteEditPage() {
   const [modalItemIndex, setModalItemIndex] = useState(null);
   const [loading, setLoading] = useState(true);
   const [isCopied, setIsCopied] = useState(false);
+  
 
   // Fetch existing Debit Note data if editing.
   useEffect(() => {
@@ -410,6 +412,7 @@ export default function DebitNoteEditPage() {
   if (!id) return <div className="p-8">No Debit Note ID provided.</div>;
 
   return (
+    <ProtectedPage module="DebitNote" action="edit">
     <div className="m-11 p-5 shadow-xl">
       <h1 className="text-2xl font-bold mb-4">Edit Debit Note</h1>
       {/* Supplier Section */}
@@ -658,6 +661,7 @@ export default function DebitNoteEditPage() {
 
       <ToastContainer />
     </div>
+    </ProtectedPage>
   );
 }
 

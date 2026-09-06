@@ -28,9 +28,9 @@ const AccountHeadSchema = new mongoose.Schema({
   group: {
     type: String,
     enum: [
-      "Current Asset", "Fixed Asset", "Other Asset", "Bank","Accounts Receivable",
+      "Current Asset", "Fixed Asset", "Other Asset", "Bank", "Bank Account", "Accounts Receivable",
     
-      "Current Liability", "Long Term Liability","Other Liability","Account Payable",,
+      "Current Liability", "Long Term Liability", "Other Liability", "Account Payable",
       "Capital", "Reserve",
       "Direct Income", "Indirect Income",
       "Direct Expense", "Indirect Expense",

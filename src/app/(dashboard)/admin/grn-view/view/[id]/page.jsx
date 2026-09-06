@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import axios from 'axios';
+import ProtectedPage from '@/components/ProtectedPage';
 import { 
   FaArrowLeft, FaPrint, FaWarehouse, FaCalculator, FaBoxes, 
   FaUser, FaBoxOpen, FaCalendarAlt, FaPaperclip, FaHistory, 
@@ -170,6 +171,7 @@ export default function GRNView() {
   }
 
   return (
+    <ProtectedPage module="GRN" action="view">
     <div className="min-h-screen bg-gray-50 py-8 px-4 sm:px-6">
       <div className="max-w-7xl mx-auto">
         
@@ -403,6 +405,7 @@ export default function GRNView() {
         </div>
       </div>
     </div>
+    </ProtectedPage>
   );
 }
 

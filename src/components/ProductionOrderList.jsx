@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import axios from "axios";
-import { Pencil, Trash2, Eye, Loader2, Plus, Search } from "lucide-react";
+import { Pencil, Trash2, Eye, Loader2, Plus, Search, BarChart3 } from "lucide-react";
 import { ToastContainer, toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import { useRouter } from "next/navigation";
@@ -187,7 +187,12 @@ export default function ProductionOrdersPage() {
             <h1 className="text-2xl font-black tracking-tight text-gray-900">Manufacturing Orders</h1>
             <p className="text-sm text-gray-400">Manage shop floor execution and material flow</p>
           </div>
-          <button onClick={() => router.push('/admin/ProductionOrder')} className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-indigo-600 text-white font-bold text-sm hover:bg-indigo-700 shadow-lg shadow-indigo-100"><Plus size={16} /> New Order</button>
+          <div className="flex items-center gap-2">
+            <button onClick={() => router.push('/admin/production/production-reports')} className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-white border border-gray-200 text-gray-700 font-bold text-sm hover:border-indigo-300 hover:text-indigo-600">
+              <BarChart3 size={16} /> Reports
+            </button>
+            <button onClick={() => router.push('/admin/ProductionOrder')} className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-indigo-600 text-white font-bold text-sm hover:bg-indigo-700 shadow-lg shadow-indigo-100"><Plus size={16} /> New Order</button>
+          </div>
         </div>
 
         {/* Stats */}
@@ -270,6 +275,7 @@ function ProductionActions({ order, details, onAction, onDelete }) {
   const acts = [
     { icon: <Eye size={14} />, label: "View Details", onClick: () => router.push(`/admin/ProductionOrder/view?id=${order._id}`) },
     { icon: <Pencil size={14} />, label: "Edit Order", onClick: () => router.push(`/admin/ProductionOrder?id=${order._id}`) },
+    { icon: <FaClipboardCheck />, label: "View Job Cards", onClick: () => onAction("viewJobCards") },
     { icon: <Plus size={14} />, label: "Create Job Card", onClick: () => onAction("createJobCard"), disabled: details.count >= details.total },
     { icon: <Plus size={14} />, label: "Stock Transfer", onClick: () => onAction("stockTransfer"), disabled: order.quantity <= (order.transferqty || 0) },
     { icon: <Plus size={14} />, label: "Issue Materials", onClick: () => onAction("issueProduction") },

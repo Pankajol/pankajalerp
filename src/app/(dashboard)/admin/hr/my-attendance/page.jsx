@@ -47,11 +47,14 @@ function Toast({ toasts }) {
     <div style={{ position: "fixed", top: 24, right: 24, zIndex: 9999, display: "flex", flexDirection: "column", gap: 10 }}>
       {toasts.map(t => (
         <div key={t.id} style={{
-          background: t.type === "success" ? "#0f172a" : "#1e0a0a",
-          border: `1px solid ${t.type === "success" ? "#22c55e44" : "#ef444444"}`,
-          color: t.type === "success" ? "#22c55e" : "#ef4444",
-          padding: "12px 20px", borderRadius: 12, fontSize: 14, fontFamily: "'DM Mono', monospace",
-          boxShadow: `0 8px 32px ${t.type === "success" ? "#22c55e22" : "#ef444422"}`,
+      background: "#ffffff",
+border: `1px solid ${
+  t.type === "success"
+    ? "rgba(34,197,94,0.25)"
+    : "rgba(239,68,68,0.25)"
+}`,
+color: t.type === "success" ? "#15803d" : "#dc2626",
+boxShadow: "0 10px 35px rgba(15,23,42,0.12)",
           animation: "slideIn 0.3s ease",
           display: "flex", alignItems: "center", gap: 10, minWidth: 260,
         }}>
@@ -68,13 +71,36 @@ function RingProgress({ percent, color, size = 160, stroke = 10 }) {
   const r = (size - stroke) / 2;
   const circ = 2 * Math.PI * r;
   const offset = circ - (percent / 100) * circ;
+
   return (
-    <svg width={size} height={size} style={{ transform: "rotate(-90deg)" }}>
-      <circle cx={size/2} cy={size/2} r={r} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth={stroke} />
-      <circle cx={size/2} cy={size/2} r={r} fill="none" stroke={color} strokeWidth={stroke}
-        strokeDasharray={circ} strokeDashoffset={offset}
+    <svg
+      width={size}
+      height={size}
+      style={{ transform: "rotate(-90deg)" }}
+    >
+      <circle
+        cx={size / 2}
+        cy={size / 2}
+        r={r}
+        fill="none"
+        stroke="#e2e8f0"
+        strokeWidth={stroke}
+      />
+
+      <circle
+        cx={size / 2}
+        cy={size / 2}
+        r={r}
+        fill="none"
+        stroke={color}
+        strokeWidth={stroke}
+        strokeDasharray={circ}
+        strokeDashoffset={offset}
         strokeLinecap="round"
-        style={{ transition: "stroke-dashoffset 1s cubic-bezier(0.4,0,0.2,1)" }}
+        style={{
+          transition:
+            "stroke-dashoffset 1s cubic-bezier(0.4,0,0.2,1)",
+        }}
       />
     </svg>
   );
@@ -184,100 +210,194 @@ export default function MyAttendancePage() {
 
   return (
     <>
-      <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Syne:wght@400;600;700;800&display=swap');
+  <style>{`
+  @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Syne:wght@400;600;700;800&display=swap');
 
-        @keyframes slideIn {
-          from { opacity: 0; transform: translateX(40px); }
-          to   { opacity: 1; transform: translateX(0); }
-        }
-        @keyframes fadeUp {
-          from { opacity: 0; transform: translateY(24px); }
-          to   { opacity: 1; transform: translateY(0); }
-        }
-        @keyframes pulse-ring {
-          0%   { box-shadow: 0 0 0 0 rgba(34,197,94,0.4); }
-          70%  { box-shadow: 0 0 0 16px rgba(34,197,94,0); }
-          100% { box-shadow: 0 0 0 0 rgba(34,197,94,0); }
-        }
-        @keyframes shimmer {
-          0%   { background-position: -400px 0; }
-          100% { background-position: 400px 0; }
-        }
-        @keyframes spin { to { transform: rotate(360deg); } }
-        @keyframes blink { 0%,100% { opacity:1; } 50% { opacity:0.3; } }
-        @keyframes popIn {
-          0%   { transform: scale(0.8); opacity: 0; }
-          60%  { transform: scale(1.08); }
-          100% { transform: scale(1); opacity: 1; }
-        }
+  @keyframes slideIn {
+    from {
+      opacity: 0;
+      transform: translateX(40px);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
 
-        .att-page * { box-sizing: border-box; }
+  @keyframes fadeUp {
+    from {
+      opacity: 0;
+      transform: translateY(24px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
 
-        .att-page {
-          min-height: 100vh;
-          background: #060b14;
-          font-family: 'Syne', sans-serif;
-          color: #e2e8f0;
-          padding: 32px 20px 60px;
-        }
+  @keyframes pulse-ring {
+    0% {
+      box-shadow: 0 0 0 0 rgba(34,197,94,0.25);
+    }
+    70% {
+      box-shadow: 0 0 0 14px rgba(34,197,94,0);
+    }
+    100% {
+      box-shadow: 0 0 0 0 rgba(34,197,94,0);
+    }
+  }
 
-        .skeleton {
-          background: linear-gradient(90deg, #1e293b 25%, #2d3f55 50%, #1e293b 75%);
-          background-size: 400px 100%;
-          animation: shimmer 1.4s infinite;
-          border-radius: 8px;
-        }
+  @keyframes shimmer {
+    0% {
+      background-position: -400px 0;
+    }
+    100% {
+      background-position: 400px 0;
+    }
+  }
 
-        .card {
-          background: #0d1829;
-          border: 1px solid rgba(255,255,255,0.07);
-          border-radius: 20px;
-          animation: fadeUp 0.5s ease both;
-        }
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
 
-        .punch-btn {
-          position: relative;
-          border: none;
-          border-radius: 14px;
-          cursor: pointer;
-          font-family: 'Syne', sans-serif;
-          font-weight: 700;
-          font-size: 15px;
-          letter-spacing: 0.5px;
-          transition: all 0.2s cubic-bezier(0.4,0,0.2,1);
-          overflow: hidden;
-          display: flex; align-items: center; justify-content: center; gap: 8px;
-        }
-        .punch-btn:not(:disabled):hover { transform: translateY(-2px); filter: brightness(1.1); }
-        .punch-btn:not(:disabled):active { transform: translateY(0) scale(0.97); }
-        .punch-btn:disabled { opacity: 0.38; cursor: not-allowed; }
+  @keyframes blink {
+    0%,100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.3;
+    }
+  }
 
-        .btn-in  { background: linear-gradient(135deg, #16a34a, #22c55e); color: #fff;
-                   box-shadow: 0 4px 20px rgba(34,197,94,0.3); }
-        .btn-out { background: linear-gradient(135deg, #dc2626, #ef4444); color: #fff;
-                   box-shadow: 0 4px 20px rgba(239,68,68,0.3); }
+  @keyframes popIn {
+    0% {
+      transform: scale(0.8);
+      opacity: 0;
+    }
+    60% {
+      transform: scale(1.08);
+    }
+    100% {
+      transform: scale(1);
+      opacity: 1;
+    }
+  }
 
-        .live-dot {
-          width: 8px; height: 8px; border-radius: 50%; background: #22c55e;
-          animation: blink 1.4s ease-in-out infinite;
-        }
+  .att-page * {
+    box-sizing: border-box;
+  }
 
-        .info-row {
-          display: flex; align-items: center; justify-content: space-between;
-          padding: 14px 0;
-          border-bottom: 1px solid rgba(255,255,255,0.05);
-        }
-        .info-row:last-child { border-bottom: none; }
+  .att-page {
+    min-height: 100vh;
+    // background: #0f172a;
+    font-family: 'Syne', sans-serif;
+    color: #0f172a;
+    padding: 32px 20px 60px;
+  }
 
-        .tag {
-          font-family: 'DM Mono', monospace;
-          font-size: 12px;
-          padding: 4px 10px;
-          border-radius: 20px;
-          letter-spacing: 0.3px;
-        }
-      `}</style>
+  .skeleton {
+    background: linear-gradient(
+      90deg,
+      #e2e8f0 25%,
+      #0f172a 50%,
+      #e2e8f0 75%
+    );
+    background-size: 400px 100%;
+    animation: shimmer 1.4s infinite;
+    border-radius: 8px;
+  }
+
+  .card {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 20px;
+    box-shadow: 0 4px 20px rgba(15, 23, 42, 0.05);
+    animation: fadeUp 0.5s ease both;
+  }
+
+  .punch-btn {
+    position: relative;
+    border: none;
+    border-radius: 14px;
+    cursor: pointer;
+    font-family: 'Syne', sans-serif;
+    font-weight: 700;
+    font-size: 15px;
+    letter-spacing: 0.5px;
+    transition: all 0.2s cubic-bezier(0.4,0,0.2,1);
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+  }
+
+  .punch-btn:not(:disabled):hover {
+    transform: translateY(-2px);
+    filter: brightness(1.04);
+  }
+
+  .punch-btn:not(:disabled):active {
+    transform: translateY(0) scale(0.97);
+  }
+
+  .punch-btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
+  .btn-in {
+    background: linear-gradient(135deg, #16a34a, #22c55e);
+    color: #ffffff;
+    box-shadow: 0 4px 18px rgba(34,197,94,0.22);
+  }
+
+  .btn-out {
+    background: linear-gradient(135deg, #dc2626, #ef4444);
+    color: #ffffff;
+    box-shadow: 0 4px 18px rgba(239,68,68,0.22);
+  }
+
+  .live-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #22c55e;
+    animation: blink 1.4s ease-in-out infinite;
+  }
+
+  .info-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 0;
+    border-bottom: 1px solid #0f172a;
+  }
+
+  .info-row:last-child {
+    border-bottom: none;
+  }
+
+  .tag {
+    font-family: 'DM Mono', monospace;
+    font-size: 12px;
+    padding: 4px 10px;
+    border-radius: 20px;
+    letter-spacing: 0.3px;
+  }
+
+  @media (max-width: 520px) {
+    .att-page {
+      padding: 20px 14px 40px;
+    }
+
+    .card {
+      border-radius: 16px;
+    }
+  }
+`}</style>
 
       <Toast toasts={toasts} />
 
@@ -288,11 +408,11 @@ export default function MyAttendancePage() {
           <div style={{ marginBottom: 28, animation: "fadeUp 0.4s ease" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
               {isWorking && <div className="live-dot" />}
-              <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, color: "#475569", letterSpacing: 2, textTransform: "uppercase" }}>
+              <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, color: "#64748b", letterSpacing: 2, textTransform: "uppercase" }}>
                 {isWorking ? "Currently Working" : "Attendance"}
               </span>
             </div>
-            <h1 style={{ fontSize: 32, fontWeight: 800, color: "#f8fafc", margin: 0, lineHeight: 1.1 }}>
+            <h1 style={{ fontSize: 32, fontWeight: 800, color: "#0f172a", margin: 0, lineHeight: 1.1 }}>
               My Attendance
             </h1>
             <p style={{ margin: "6px 0 0", fontFamily: "'DM Mono', monospace", fontSize: 13, color: "#64748b" }}>
@@ -302,10 +422,10 @@ export default function MyAttendancePage() {
 
           {/* ── Clock Card ── */}
           <div className="card" style={{ padding: "28px 24px", marginBottom: 16, textAlign: "center", animationDelay: "0.05s" }}>
-            <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 46, fontWeight: 500, color: "#f1f5f9", letterSpacing: -1, lineHeight: 1 }}>
+            <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 46, fontWeight: 500, color: "#0f172a", letterSpacing: -1, lineHeight: 1 }}>
               {now.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: true })}
             </div>
-            <div style={{ marginTop: 8, fontFamily: "'DM Mono', monospace", fontSize: 12, color: "#475569" }}>
+            <div style={{ marginTop: 8, fontFamily: "'DM Mono', monospace", fontSize: 12, color: "#64748b" }}>
               {now.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}
             </div>
           </div>
@@ -316,16 +436,16 @@ export default function MyAttendancePage() {
               <RingProgress percent={ringPercent} color={statusCfg.color} size={120} stroke={8} />
               <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
                 <span style={{ fontSize: 22, color: statusCfg.color }}>{statusCfg.icon}</span>
-                <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 13, color: "#94a3b8", marginTop: 2 }}>
+                <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 13, color: "#64748b", marginTop: 2 }}>
                   {Math.round(ringPercent)}%
                 </span>
               </div>
             </div>
             <div style={{ flex: 1 }}>
-              <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, color: "#475569", textTransform: "uppercase", letterSpacing: 2, marginBottom: 6 }}>
+              <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, color: "#64748b", textTransform: "uppercase", letterSpacing: 2, marginBottom: 6 }}>
                 Time Worked
               </div>
-              <div style={{ fontSize: 28, fontWeight: 700, color: "#f1f5f9", lineHeight: 1 }}>
+              <div style={{ fontSize: 28, fontWeight: 700, color: "#0f172a", lineHeight: 1 }}>
                 {fetching ? <div className="skeleton" style={{ width: 120, height: 32 }} /> : msToHMS(elapsedMs)}
               </div>
               <div style={{ marginTop: 10 }}>
@@ -333,7 +453,7 @@ export default function MyAttendancePage() {
                   {statusCfg.icon} {status}
                 </span>
               </div>
-              <div style={{ marginTop: 8, fontFamily: "'DM Mono', monospace", fontSize: 11, color: "#334155" }}>
+              <div style={{ marginTop: 8, fontFamily: "'DM Mono', monospace", fontSize: 11, color: "#64748b" }}>
                 Goal: {totalHoursGoal}h workday
               </div>
             </div>
@@ -351,8 +471,8 @@ export default function MyAttendancePage() {
               <>
                 <div className="info-row">
                   <div>
-                    <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, color: "#475569", textTransform: "uppercase", letterSpacing: 1.5 }}>Punch In</div>
-                    <div style={{ fontSize: 17, fontWeight: 600, color: attendance?.punchIn?.time ? "#22c55e" : "#334155", marginTop: 3, fontFamily: "'DM Mono', monospace" }}>
+                    <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, color: "#64748b", textTransform: "uppercase", letterSpacing: 1.5 }}>Punch In</div>
+                    <div style={{ fontSize: 17, fontWeight: 600, color: attendance?.punchIn?.time ? "#22c55e" : "#94a3b8", marginTop: 3, fontFamily: "'DM Mono', monospace" }}>
                       {attendance?.punchIn?.time || "--:-- --"}
                     </div>
                   </div>
@@ -365,8 +485,8 @@ export default function MyAttendancePage() {
 
                 <div className="info-row">
                   <div>
-                    <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, color: "#475569", textTransform: "uppercase", letterSpacing: 1.5 }}>Punch Out</div>
-                    <div style={{ fontSize: 17, fontWeight: 600, color: attendance?.punchOut?.time ? "#ef4444" : "#334155", marginTop: 3, fontFamily: "'DM Mono', monospace" }}>
+                    <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, color: "#64748b", textTransform: "uppercase", letterSpacing: 1.5 }}>Punch Out</div>
+                    <div style={{ fontSize: 17, fontWeight: 600, color: attendance?.punchOut?.time ? "#ef4444" : "#64748b", marginTop: 3, fontFamily: "'DM Mono', monospace" }}>
                       {attendance?.punchOut?.time || "--:-- --"}
                     </div>
                   </div>
@@ -379,13 +499,13 @@ export default function MyAttendancePage() {
 
                 <div className="info-row">
                   <div>
-                    <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, color: "#475569", textTransform: "uppercase", letterSpacing: 1.5 }}>Total Hours</div>
-                    <div style={{ fontSize: 17, fontWeight: 600, color: "#f1f5f9", marginTop: 3, fontFamily: "'DM Mono', monospace" }}>
+                    <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, color: "#64748b", textTransform: "uppercase", letterSpacing: 1.5 }}>Total Hours</div>
+                    <div style={{ fontSize: 17, fontWeight: 600, color: "#0f172a", marginTop: 3, fontFamily: "'DM Mono', monospace" }}>
                       {attendance?.totalHours ? `${attendance.totalHours}h` : isWorking ? msToHMS(elapsedMs) : "0h"}
                     </div>
                   </div>
                   {location && (
-                    <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, color: "#475569" }}>
+                    <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, color: "#64748b" }}>
                       📍 {location.lat.toFixed(4)}, {location.lng.toFixed(4)}
                     </span>
                   )}
@@ -396,13 +516,24 @@ export default function MyAttendancePage() {
 
           {/* ── Punch Buttons ── */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, animationDelay: "0.2s", animation: "fadeUp 0.5s ease both" }}>
-            <button
-              className="punch-btn btn-in"
-              onClick={handlePunchIn}
-              disabled={loading || !!attendance?.punchIn?.time}
-              style={{ padding: "18px 0", animationDelay: "0.2s",
-                ...(punchAnim === "in" ? { animation: "popIn 0.4s ease" } : {}) }}
-            >
+         <button
+  className="punch-btn btn-in"
+  onClick={handlePunchIn}
+  disabled={loading || !!attendance?.punchIn?.time}
+  style={
+    punchAnim === "in"
+      ? {
+          padding: "18px 0",
+          animationName: "popIn",
+          animationDuration: "0.4s",
+          animationTimingFunction: "ease",
+          animationFillMode: "both",
+        }
+      : {
+          padding: "18px 0",
+        }
+  }
+>
               {loading && punchAnim === "in" ? (
                 <span style={{ width: 18, height: 18, border: "2px solid rgba(255,255,255,0.3)", borderTopColor: "#fff", borderRadius: "50%", display: "inline-block", animation: "spin 0.7s linear infinite" }} />
               ) : (
@@ -415,14 +546,28 @@ export default function MyAttendancePage() {
               )}
             </button>
 
-            <button
-              className="punch-btn btn-out"
-              onClick={handlePunchOut}
-              disabled={loading || !attendance?.punchIn?.time || !!attendance?.punchOut?.time}
-              style={{ padding: "18px 0",
-                ...(punchAnim === "out" ? { animation: "popIn 0.4s ease" } : {}),
-                ...(isWorking ? { animation: "pulse-ring 2s ease infinite" } : {}) }}
-            >
+         <button
+  className="punch-btn btn-out"
+  onClick={handlePunchOut}
+  disabled={
+    loading ||
+    !attendance?.punchIn?.time ||
+    !!attendance?.punchOut?.time
+  }
+  style={
+    punchAnim === "out"
+      ? {
+          padding: "18px 0",
+          animationName: "popIn",
+          animationDuration: "0.4s",
+          animationTimingFunction: "ease",
+          animationFillMode: "both",
+        }
+      : {
+          padding: "18px 0",
+        }
+  }
+>
               {loading && punchAnim === "out" ? (
                 <span style={{ width: 18, height: 18, border: "2px solid rgba(255,255,255,0.3)", borderTopColor: "#fff", borderRadius: "50%", display: "inline-block", animation: "spin 0.7s linear infinite" }} />
               ) : (
@@ -437,7 +582,7 @@ export default function MyAttendancePage() {
           </div>
 
           {/* ── State hint ── */}
-          <div style={{ textAlign: "center", marginTop: 16, fontFamily: "'DM Mono', monospace", fontSize: 12, color: "#334155", animation: "fadeUp 0.5s ease 0.25s both" }}>
+          <div style={{ textAlign: "center", marginTop: 16, fontFamily: "'DM Mono', monospace", fontSize: 12, color: "#64748b", animation: "fadeUp 0.5s ease 0.25s both" }}>
             {!isPunchedIn && !isPunchedOut && "Tap Punch In to start your workday"}
             {isWorking && "You're clocked in — tap Punch Out when done"}
             {isPunchedIn && isPunchedOut && "✦ Workday complete — see you tomorrow!"}

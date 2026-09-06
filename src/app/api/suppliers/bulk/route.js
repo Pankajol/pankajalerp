@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import dbConnect from "@/lib/db";
 import Supplier from "@/models/SupplierModels";
-import BankHead from "@/models/BankHead";
+import AccountHead from "@/models/accounts/AccountHead";
 import { getTokenFromHeader, verifyJWT } from "@/lib/auth";
 
 export async function POST(req) {
@@ -17,8 +17,13 @@ export async function POST(req) {
       );
 
     const decoded = verifyJWT(token);
+    if (!decoded?.companyId)
+      return NextResponse.json(
+        { success: false, message: "Invalid or expired session" },
+        { status: 401 }
+      );
     const companyId = decoded.companyId;
-    const createdBy = decoded.userId;
+    const createdBy = decoded.id || decoded.userId;
 
     // ✅ 2️⃣ Parse request
     const { suppliers } = await req.json();
@@ -42,12 +47,10 @@ export async function POST(req) {
       : 1;
 
     // ✅ 4️⃣ Fetch all BankHeads once (for fast lookup)
-    const bankHeads = await BankHead.find({ companyId }).select(
-      "_id accountName"
-    );
+    const bankHeads = await AccountHead.find({ companyId, isActive: true }).select("_id name");
     const bankMap = {};
     bankHeads.forEach((b) => {
-      bankMap[b.accountName.trim().toLowerCase()] = b._id;
+      bankMap[b.name.trim().toLowerCase()] = b._id;
     });
 
     // ✅ 5️⃣ Process each supplier row
@@ -59,7 +62,7 @@ export async function POST(req) {
       if (!row.supplierName) errors.push("supplierName missing");
       if (!row.supplierGroup) errors.push("supplierGroup missing");
       if (!row.supplierType) errors.push("supplierType missing");
-      if (!row.mobileNumber) errors.push("mobileNumber missing");
+      if (!row.emailId) errors.push("emailId missing");
       if (!row.pan) errors.push("pan missing");
       if (!row.gstCategory) errors.push("gstCategory missing");
 
@@ -76,7 +79,7 @@ export async function POST(req) {
         if (match) {
           glAccountId = match;
         } else {
-          errors.push(`GL Account '${row.glAccount}' not found – skipped`);
+          errors.push(`GL Account '${row.glAccount}' was not found; saved without an account link.`);
         }
       }
 
@@ -100,14 +103,10 @@ export async function POST(req) {
       };
 
       // ✅ Check if supplier already exists
-      const existing = await Supplier.findOne({
-        companyId,
-        $or: [
-          { supplierName: row.supplierName },
-          { mobileNumber: row.mobileNumber },
-          { emailId: row.emailId },
-        ],
-      });
+      const duplicateChecks = [{ supplierName: row.supplierName }];
+      if (row.mobileNumber) duplicateChecks.push({ mobileNumber: row.mobileNumber });
+      if (row.emailId) duplicateChecks.push({ emailId: row.emailId });
+      const existing = await Supplier.findOne({ companyId, $or: duplicateChecks });
 
       if (existing) {
         // Update existing supplier

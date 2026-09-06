@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
 import api from "@/lib/api";
+import ProtectedPage from "@/components/ProtectedPage";
 import { DragDropContext, Droppable, Draggable } from "react-beautiful-dnd";
 
 // FullCalendar dynamic import
@@ -99,6 +100,7 @@ const handleDragEnd = async (result) => {
   if (loading) return <p className="p-6">Loading...</p>;
 
   return (
+    <ProtectedPage module="SalesOrder" action="view">
     <div className="p-6">
       {/* Header */}
       <div className="flex justify-between items-center mb-6">
@@ -195,5 +197,6 @@ const handleDragEnd = async (result) => {
         </div>
       )}
     </div>
+    </ProtectedPage>
   );
 }

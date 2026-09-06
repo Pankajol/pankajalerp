@@ -5,6 +5,8 @@ import { useRouter, useSearchParams } from "next/navigation";
 import axios from "axios";
 import ItemSection from "@/components/ItemSection";
 import CustomerSearch from "@/components/CustomerSearch";
+import { useAuth } from "@/context/AuthContext";
+// import NoPermission from "@/components/NoPermission";
 import { toast, ToastContainer } from "react-toastify";
 import {
   FaArrowLeft, FaUser, FaCalendarAlt, FaBoxOpen, FaCalculator,
@@ -382,7 +384,15 @@ function SalesQuotationForm() {
   };
 
   if (fetchLoading) return <div className="p-10 text-center text-gray-400">Loading quotation data...</div>;
+  const { can, loading:authloading } = useAuth();
 
+  if (authloading) {
+    return null;
+  }
+
+  if (!can("Sales Quotation", "create")) {
+    return null;
+  }
   return (
     <div className="min-h-screen bg-gray-50">
       <ToastContainer position="top-right" autoClose={3000} />

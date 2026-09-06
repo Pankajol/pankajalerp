@@ -3,6 +3,7 @@
 import axios from "axios";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import ProtectedPage from "@/components/ProtectedPage";
 import {
   FaArrowLeft, FaEdit, FaUser, FaCalendarAlt,
   FaBoxOpen, FaCalculator, FaPaperclip, FaMapMarkerAlt
@@ -93,6 +94,7 @@ export default function CreditMemoDetail() {
   if (!memo) return null;
 
   return (
+    <ProtectedPage module="CreditMemo" action="view">
     <div className="min-h-screen bg-gray-50">
       <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6">
 
@@ -300,6 +302,7 @@ export default function CreditMemoDetail() {
         </div>
       </div>
     </div>
+    </ProtectedPage>
   );
 }
 
