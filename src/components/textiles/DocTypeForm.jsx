@@ -33,9 +33,15 @@ const linkSources = {
   Customer: "/customers?limit=500",
   Supplier: "/suppliers?limit=500",
   Warehouse: "/warehouse?limit=500",
+  "Warehouse / Location": "/warehouse?limit=500",
+  Company: "/company/profile",
+  Department: "/hr/departments",
   Employee: "/hr/employees?limit=500",
   User: "/users?limit=500",
   "Sales Order": "/sales-order?limit=500",
+  "Work Order": "/construction/work-orders?limit=100",
+  "Delivery Note": "/delivery?limit=100",
+  Batch: "/textiles/doctypes/production-batch",
   Color: "/textiles/doctypes/color",
   Shade: "/textiles/doctypes/shade",
   "Fabric Construction": "/textiles/doctypes/fabric-construction",
@@ -43,6 +49,8 @@ const linkSources = {
   "Fiber / Composition Master": "/textiles/doctypes/fiber-composition-master",
   Skill: "/textiles/doctypes/skill",
   Machine: "/textiles/doctypes/machine",
+  Workstation: "/textiles/doctypes/workstation",
+  "Cost Center": "/textiles/doctypes/cost-center",
   "Textile Process": "/textiles/doctypes/textile-process",
   "Textile Production Plan": "/textiles/doctypes/textile-production-plan",
   "Production Batch": "/textiles/doctypes/production-batch",
@@ -91,17 +99,24 @@ function emptyData(fields) {
 function LinkControl({ field, value, disabled, onChange }) {
   const listId = useId();
   const [options, setOptions] = useState([]);
+  const [loadingOptions, setLoadingOptions] = useState(false);
+  const [loadError, setLoadError] = useState("");
+  const [reloadKey, setReloadKey] = useState(0);
+  const endpoint = linkSources[field.link];
   useEffect(() => {
     const staticOptions = staticLinkOptions[field.link];
     if (staticOptions) {
       setOptions(staticOptions);
+      setLoadError("");
       return;
     }
-    const endpoint = linkSources[field.link];
     if (!endpoint) {
       setOptions([]);
+      setLoadError(`No data source configured for ${field.link}`);
       return;
     }
+    setLoadingOptions(true);
+    setLoadError("");
     if (!linkCache.has(endpoint)) {
       const headers = {
         headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
@@ -110,29 +125,90 @@ function LinkControl({ field, value, disabled, onChange }) {
         endpoint,
         api
           .get(endpoint, headers)
-          .then(
-            (response) =>
-              response.data.data ||
-              response.data.items ||
-              response.data.orders ||
-              []
-          )
+          .then((response) => {
+            const payload = response.data;
+            const records =
+              payload?.data ??
+              payload?.items ??
+              payload?.orders ??
+              payload?.company ??
+              payload;
+            const normalized = Array.isArray(records)
+              ? records
+              : records && typeof records === "object"
+              ? [records]
+              : [];
+            // Do not permanently cache an empty master list. A record may be
+            // created in another tab/page and should appear on the next open.
+            if (!normalized.length) linkCache.delete(endpoint);
+            return normalized;
+          })
       );
     }
     linkCache
       .get(endpoint)
-      .then(setOptions)
-      .catch(() => setOptions([]));
-  }, [disabled, field.link]);
+      .then((records) => {
+        setOptions(records);
+        setLoadError("");
+      })
+      .catch((error) => {
+        linkCache.delete(endpoint);
+        setOptions([]);
+        setLoadError(
+          error.response?.data?.message ||
+            error.response?.data?.error ||
+            `Unable to load ${field.link}`
+        );
+      })
+      .finally(() => setLoadingOptions(false));
+  }, [disabled, endpoint, field.link, reloadKey]);
   const label = (item) => {
+    const linkedData = item.data || {};
     if (
       ["Item", "Item / Fiber Master"].includes(field.link) &&
       (item.itemCode || item.itemName)
     ) {
       return [item.itemCode, item.itemName].filter(Boolean).join(" - ");
     }
+    if (
+      ["Warehouse", "Warehouse / Location"].includes(field.link) &&
+      (item.warehouseCode || item.warehouseName)
+    ) {
+      const warehouseLabel = [item.warehouseCode, item.warehouseName]
+        .filter(Boolean)
+        .join(" - ");
+      const statusLabel =
+        item.status && item.status !== "Active" ? ` (${item.status})` : "";
+      return `${warehouseLabel}${item.isDefault ? " (Default)" : statusLabel}`;
+    }
+    const linkedLabels = {
+      Color: [linkedData.color_code, linkedData.color_name],
+      Shade: [linkedData.shade_code, linkedData.shade_name],
+      "Fabric Construction": [
+        linkedData.construction_code,
+        linkedData.construction_name,
+      ],
+      "Fiber / Composition Master": [linkedData.composition_name],
+      Skill: [linkedData.skill_code, linkedData.skill_name],
+      Machine: [linkedData.machine_id, linkedData.machine_name],
+      Workstation: [linkedData.workstation_code, linkedData.workstation_name],
+      "Cost Center": [linkedData.cost_center_code, linkedData.cost_center_name],
+      "Textile Process": [linkedData.process_code, linkedData.process_name],
+      "Production Batch": [linkedData.batch_no],
+      Batch: [linkedData.batch_no],
+      "Dyeing Recipe": [linkedData.recipe_no],
+      "Fabric Roll": [linkedData.roll_id],
+    }[field.link];
+    if (linkedLabels?.some(Boolean))
+      return linkedLabels.filter(Boolean).join(" - ");
     return (
       item.documentNumber ||
+      item.documentNumberDelivery ||
+      item.workOrderNumber ||
+      item.companyName ||
+      (item.employeeCode && item.fullName
+        ? `${item.employeeCode} - ${item.fullName}`
+        : item.fullName) ||
       item.customerName ||
       item.supplierName ||
       item.warehouseName ||
@@ -165,8 +241,15 @@ function LinkControl({ field, value, disabled, onChange }) {
         options={selectOptions}
         value={selected}
         isDisabled={disabled}
+        isLoading={loadingOptions}
         isSearchable
         isClearable={!field.required}
+        onMenuOpen={() => {
+          if (!loadingOptions && !options.length && endpoint) {
+            linkCache.delete(endpoint);
+            setReloadKey((current) => current + 1);
+          }
+        }}
         menuPortalTarget={
           typeof document !== "undefined" ? document.body : undefined
         }
@@ -182,6 +265,20 @@ function LinkControl({ field, value, disabled, onChange }) {
         Linked to {field.link}
         {options.length ? ` · ${options.length} available` : ""}
       </p>
+      {loadError && (
+        <p className="mt-1 text-xs font-medium text-rose-600">{loadError}</p>
+      )}
+      {!loadingOptions &&
+        !loadError &&
+        !options.length &&
+        ["Warehouse", "Warehouse / Location"].includes(field.link) && (
+          <Link
+            href="/admin/WarehouseDetailsForm"
+            className="mt-1 inline-block text-xs font-semibold text-indigo-600 hover:text-indigo-700"
+          >
+            No warehouse exists for this company · Add Warehouse
+          </Link>
+        )}
     </div>
   );
   /*

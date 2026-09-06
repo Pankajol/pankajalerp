@@ -35,6 +35,14 @@ export const textileDoctypes = {
     label: "Machine", category: "Masters", prefix: "MCH",
     fields: [f("machine_id", "Machine ID"), f("machine_name", "Machine Name", "text", { required: true }), f("machine_type", "Machine Type"), f("department", "Department", "link", { link: "Department" }), f("workstation", "Workstation", "link", { link: "Workstation" }), f("capacity", "Capacity", "number"), f("capacity_uom", "Capacity UOM", "link", { link: "UOM" }), f("manufacturer", "Manufacturer"), f("model", "Model"), f("serial_no", "Serial No"), f("power_kw", "Power (kW)", "number"), f("hourly_cost", "Hourly Cost", "currency"), f("status", "Status", "select", { options: ["Active", "Maintenance", "Idle", "Retired"] })],
   },
+  workstation: {
+    label: "Workstation", category: "Masters", prefix: "WST",
+    fields: [f("workstation_code", "Workstation Code"), f("workstation_name", "Workstation Name", "text", { required: true }), f("department", "Department", "link", { link: "Department" }), f("description", "Description", "textarea"), f("active", "Active", "checkbox", { default: true })],
+  },
+  "cost-center": {
+    label: "Cost Center", category: "Masters", prefix: "CCT",
+    fields: [f("cost_center_code", "Cost Center Code"), f("cost_center_name", "Cost Center Name", "text", { required: true }), f("department", "Department", "link", { link: "Department" }), f("description", "Description", "textarea"), f("active", "Active", "checkbox", { default: true })],
+  },
   skill: {
     label: "Skill", category: "Masters", prefix: "SKL",
     fields: [f("skill_code", "Skill Code"), f("skill_name", "Skill Name", "text", { required: true }), f("skill_category", "Skill Category"), f("description", "Description", "textarea"), f("active", "Active", "checkbox", { default: true })],

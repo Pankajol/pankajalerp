@@ -24,7 +24,7 @@ export async function GET(req) {
     const warehouseCode = searchParams.get("warehouseCode");
     const getDefault = searchParams.get("getDefault") === "true";
     const page = parseInt(searchParams.get("page")) || 1;
-    const limit = Math.min(parseInt(searchParams.get("limit")) || 10, 100);
+    const limit = Math.min(parseInt(searchParams.get("limit")) || 10, 500);
     const search = searchParams.get("search") || "";
     const status = searchParams.get("status") || "All";
     
