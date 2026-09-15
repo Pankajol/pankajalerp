@@ -90,7 +90,7 @@ const TransactionSchema = new mongoose.Schema({
     type: String,
     enum: [
       "SalesInvoice", "PurchaseInvoice", "SalesOrder",
-      "PurchaseOrder", "Payroll", "Salary", "Manual", null
+      "PurchaseOrder", "CreditNote", "DebitNote", "Payroll", "Salary", "Manual", null
     ],
     default: "Manual",
   },

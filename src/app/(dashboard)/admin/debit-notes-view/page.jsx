@@ -19,6 +19,7 @@ export default function DebitNoteList() {
   const [filterStatus, setFilterStatus] = useState("All");
   const router = useRouter();
 
+  const { can } = useAuth();
   const fetchNotes = async () => {
     setLoading(true);
     try {

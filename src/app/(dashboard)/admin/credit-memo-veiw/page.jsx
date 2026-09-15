@@ -22,6 +22,7 @@ export default function CreditMemoList() {
   const [filterStatus, setFilterStatus] = useState("All");
   const [uploading, setUploading]   = useState(false);
   const router = useRouter();
+  const { can } = useAuth();
 
   const fetchMemos = async () => {
     setLoading(true);
@@ -133,6 +134,7 @@ export default function CreditMemoList() {
     <ProtectedPage module="CreditMemo" action="view">
     <div className="min-h-screen bg-gray-50">
       <div className="max-w-screen-xl mx-auto px-4 sm:px-6 py-6">
+      
 
         {/* Header */}
         <div className="flex flex-wrap items-center justify-between gap-3 mb-6">

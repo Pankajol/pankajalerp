@@ -137,7 +137,7 @@ const initialCreditMemoState = {
     item: "", imageUrl: "", itemCode: "", itemName: "", itemDescription: "", quantity: 0, allowedQuantity: 0, creditedQuantity: 0,
     unitPrice: 0, discount: 0, freight: 0, gstRate: 0, igstRate: 0, taxOption: "GST",
     priceAfterDiscount: 0, totalAmount: 0, gstAmount: 0, cgstAmount: 0, sgstAmount: 0, igstAmount: 0,
-    managedBy: "none", batches: [], warehouse: "", warehouseName: "", warehouseCode: "", stockImpact: true,
+    managedBy: "none", batches: [], warehouse: "", warehouseName: "", warehouseCode: "", selectedBin: null, stockImpact: true,
     variant: null,          // ✅ store selected variant object
     selectedVariantId: null, // ✅ store variant ID
     variants: [],           // ✅ list of available variants for the selected item
@@ -221,6 +221,7 @@ function CreditMemoForm() {
         warehouse: wh._id,
         warehouseName: wh.warehouseName,
         warehouseCode: wh.warehouseCode,
+        selectedBin: null,
       })),
     }));
     toast.success(`Warehouse "${wh.warehouseName}" applied to all items.`);
@@ -254,70 +255,152 @@ function CreditMemoForm() {
   // ──────────────────────────────────────────────────────────────
   // Fetch item details (including variants) when item is selected
   // ──────────────────────────────────────────────────────────────
-  const fetchItemDetails = async (itemId, index) => {
-    if (!itemId) return;
-    const token = localStorage.getItem("token");
-    try {
-      const res = await axios.get(`/api/items/${itemId}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (res.data.success) {
-        const itemData = res.data.data;
-        const variants = itemData.variants || [];
-        // Set default values from the item (non-variant)
-        setFormData(prev => {
-          const items = [...prev.items];
-          items[index] = {
-            ...items[index],
-            itemName: itemData.name,
-            itemCode: itemData.code,
-            itemDescription: itemData.description || "",
-            unitPrice: itemData.sellingPrice || itemData.price || 0,
-            gstRate: itemData.gstRate || 0,
-            igstRate: itemData.igstRate || 0,
-            taxOption: itemData.taxOption || "GST",
-            managedBy: itemData.managedBy || "none",
-            variants: variants,
-            variant: null,
-            selectedVariantId: null,
-            imageUrl: itemData.imageUrl || "",
-          };
-          const computed = computeItemValues(items[index]);
-          items[index] = { ...items[index], ...computed };
-          return { ...prev, items };
-        });
+const fetchItemDetails = async (itemId, index) => {
+  if (!itemId || index === undefined || index === null) return;
+
+  const token = localStorage.getItem("token");
+
+  try {
+    const res = await axios.get(`/api/items/${itemId}`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    if (!res.data?.success) return;
+
+    const itemData = res.data.data;
+    const variants = Array.isArray(itemData.variants)
+      ? itemData.variants
+      : [];
+
+    setFormData((prev) => {
+      // Important: previous state se latest items lo
+      const items = [...prev.items];
+
+      // Agar row remove ho chuki hai to update mat karo
+      if (!items[index]) {
+        return prev;
       }
-    } catch (err) {
-      console.error("Failed to fetch item details", err);
-      toast.error("Could not load item details");
-    }
-  };
+
+      const currentItem = items[index];
+
+      // Ignore a response for an item that was changed while this request ran.
+      if (String(currentItem.item) !== String(itemId)) {
+        return prev;
+      }
+
+      const selectedVariant = currentItem.variant;
+
+      const updatedItem = {
+        ...currentItem,
+
+        item: itemId,
+        itemName: itemData.itemName || itemData.name || "",
+        itemCode: selectedVariant?.sku || itemData.itemCode || itemData.code || "",
+        itemDescription: itemData.description || "",
+
+        unitPrice: Number(
+          selectedVariant?.variantPrice ?? itemData.unitPrice ?? itemData.sellingPrice ?? itemData.price ?? 0
+        ),
+
+        gstRate: Number(itemData.gstRate || 0),
+        igstRate: Number(itemData.igstRate ?? itemData.gstRate ?? 0),
+        taxOption: itemData.taxOption || (itemData.includeIGST && !itemData.includeGST ? "IGST" : "GST"),
+        managedBy: itemData.managedBy || (itemData.batchRequired ? "batch" : "none"),
+
+        imageUrl: selectedVariant?.variantImageUrl || itemData.imageUrl || "",
+        variants,
+
+        // Preserve the warehouse and any variant selected while details loaded.
+        variant: currentItem.variant,
+        selectedVariantId: currentItem.selectedVariantId,
+        batches: currentItem.batches || [],
+        stockAllocations: currentItem.stockAllocations || [],
+      };
+
+      items[index] = {
+        ...updatedItem,
+        ...computeItemValues(updatedItem),
+      };
+
+      return {
+        ...prev,
+        items,
+      };
+    });
+  } catch (error) {
+    console.error("Failed to fetch item details:", error);
+    toast.error("Could not load item details");
+  }
+};
 
   // ──────────────────────────────────────────────────────────────
   // Handle variant selection
   // ──────────────────────────────────────────────────────────────
-  const handleVariantChange = (index, variantId) => {
-    setFormData(prev => {
-      const items = [...prev.items];
-      const item = items[index];
-      const variant = item.variants?.find(v => v._id === variantId);
-      if (variant) {
-        item.selectedVariantId = variantId;
-        item.variant = variant;
-        item.unitPrice = variant.sellingPrice || variant.price || item.unitPrice;
-        item.gstRate = variant.gstRate || item.gstRate;
-        item.igstRate = variant.igstRate || item.igstRate;
-        item.itemCode = variant.sku || item.itemCode;
-        item.imageUrl = variant.imageUrl || variant.variantImageUrl || item.imageUrl;
-        // Recompute financials
-        const computed = computeItemValues(item);
-        Object.assign(item, computed);
-      }
-      items[index] = item;
-      return { ...prev, items };
-    });
-  };
+const handleVariantChange = (index, variantId) => {
+  setFormData((prev) => {
+    const items = [...prev.items];
 
+    if (!items[index]) {
+      return prev;
+    }
+
+    const currentItem = items[index];
+
+    const variant = (currentItem.variants || []).find(
+      (v) => String(v._id) === String(variantId)
+    );
+
+    if (!variant) {
+      return prev;
+    }
+
+    const updatedItem = {
+      ...currentItem,
+
+      selectedVariantId: variantId,
+      variant,
+
+      unitPrice: Number(
+        variant.sellingPrice ??
+          variant.price ??
+          currentItem.unitPrice ??
+          0
+      ),
+
+      gstRate: Number(
+        variant.gstRate ?? currentItem.gstRate ?? 0
+      ),
+
+      igstRate: Number(
+        variant.igstRate ?? currentItem.igstRate ?? 0
+      ),
+
+      itemCode:
+        variant.sku ||
+        variant.code ||
+        currentItem.itemCode ||
+        "",
+
+      imageUrl:
+        variant.imageUrl ||
+        variant.variantImageUrl ||
+        currentItem.imageUrl ||
+        "",
+    };
+
+    items[index] = {
+      ...updatedItem,
+      ...computeItemValues(updatedItem),
+    };
+
+    return {
+      ...prev,
+      items,
+    };
+  });
+};
   // ------------------------------------------------------------
   // Load from sessionStorage (Copy from Sales Invoice) – with variant support
   // ------------------------------------------------------------
@@ -452,41 +535,134 @@ function CreditMemoForm() {
   }, [formData.items, formData.freight, formData.rounding]);
 
   // Unified handler for item changes (from ItemSection)
-  const handleItemChange = (index, update) => {
-    setFormData(prev => {
+const handleItemChange = (index, update) => {
+  // Direct object update
+  if (update && typeof update === "object" && !update.target) {
+    setFormData((prev) => {
       const items = [...prev.items];
-      let updatedItem = { ...items[index] };
-      if (update && typeof update === "object") {
-        if (update.target) {
-          const { name, value } = update.target;
-          const numericFields = ["quantity", "unitPrice", "discount", "freight", "gstRate", "igstRate"];
-          const newValue = numericFields.includes(name) ? parseFloat(value) || 0 : value;
-          updatedItem[name] = newValue;
-          // If the item field changed (i.e., user selected a new item), fetch its details
-          if (name === "item" && value) {
-            fetchItemDetails(value, index);
-          }
-        } else {
-          // For direct object updates (e.g., when variant selected)
-          if (update.selectedVariantId !== undefined) {
-            handleVariantChange(index, update.selectedVariantId);
-            return prev; // already updated via handleVariantChange
-          }
-          updatedItem = { ...updatedItem, ...update };
-        }
+
+      if (!items[index]) {
+        return prev;
       }
-      const computed = computeItemValues(updatedItem);
-      updatedItem = { ...updatedItem, ...computed };
-      items[index] = updatedItem;
-      return { ...prev, items };
+
+      const updatedItem = {
+        ...items[index],
+        ...update,
+      };
+
+      items[index] = {
+        ...updatedItem,
+        ...computeItemValues(updatedItem),
+      };
+
+      return {
+        ...prev,
+        items,
+      };
     });
-  };
+
+    return;
+  }
+
+  // Input/select event update
+  if (update?.target) {
+    const { name, value } = update.target;
+
+    const numericFields = [
+      "quantity",
+      "unitPrice",
+      "discount",
+      "freight",
+      "gstRate",
+      "igstRate",
+    ];
+
+    const newValue = numericFields.includes(name)
+      ? Number(value) || 0
+      : value;
+
+    // Fetch full details only when the selected item actually changes. The shared
+    // selector sends the rest of the row immediately after this event.
+    if (name === "item") {
+      const shouldFetch = String(formData.items[index]?.item || "") !== String(newValue || "");
+      setFormData((prev) => {
+        const items = [...prev.items];
+
+        if (!items[index]) {
+          return prev;
+        }
+
+        const oldItem = items[index];
+
+        if (String(oldItem.item) === String(newValue)) {
+          return prev;
+        }
+
+        items[index] = {
+          ...oldItem,
+          item: newValue,
+
+          // Loading ke time old item details remove karo, but retain the row's warehouse.
+          itemName: "",
+          itemCode: "",
+          itemDescription: "",
+          imageUrl: "",
+          unitPrice: 0,
+          gstRate: 0,
+          igstRate: 0,
+          taxOption: "GST",
+          managedBy: "none",
+          variants: [],
+          variant: null,
+          selectedVariantId: null,
+          batches: [],
+          stockAllocations: [],
+        };
+
+        return {
+          ...prev,
+          items,
+        };
+      });
+
+      if (shouldFetch) fetchItemDetails(newValue, index);
+      return;
+    }
+
+    setFormData((prev) => {
+      const items = [...prev.items];
+
+      if (!items[index]) {
+        return prev;
+      }
+
+      const updatedItem = {
+        ...items[index],
+        [name]: newValue,
+      };
+
+      items[index] = {
+        ...updatedItem,
+        ...computeItemValues(updatedItem),
+      };
+
+      return {
+        ...prev,
+        items,
+      };
+    });
+  }
+};
 
   const addItemRow = () => {
-    setFormData(prev => ({
-      ...prev,
-      items: [...prev.items, { ...initialCreditMemoState.items[0] }],
-    }));
+    const warehouse = warehouses.find((wh) => wh._id === selectedGlobalWarehouse) || defaultWarehouse;
+    const row = {
+      ...initialCreditMemoState.items[0],
+      warehouse: warehouse?._id || "",
+      warehouseName: warehouse?.warehouseName || "",
+      warehouseCode: warehouse?.warehouseCode || "",
+    };
+    setFormData(prev => ({ ...prev, items: [...prev.items, row] }));
   };
   const removeItemRow = (index) => {
     setFormData(prev => ({
@@ -551,6 +727,11 @@ function CreditMemoForm() {
       const item = formData.items[i];
       if (!item.item) { toast.error(`Item missing row ${i+1}`); return false; }
       if (!item.warehouse) { toast.error(`Warehouse missing row ${i+1}`); return false; }
+      const warehouse = warehouses.find((wh) => String(wh._id) === String(item.warehouse));
+      if (warehouse?.binLocations?.length && !(item.selectedBin?._id || item.selectedBin)) {
+        toast.error(`Select a bin for ${item.itemName || `row ${i + 1}`}`);
+        return false;
+      }
       if (Number(item.quantity) <= 0) { toast.error(`Quantity >0 row ${i+1}`); return false; }
       if (item.managedBy?.toLowerCase() === "batch") {
         const totalBatchQty = (item.batches || []).reduce((s, b) => s + (Number(b.batchQuantity) || 0), 0);
@@ -568,6 +749,7 @@ function CreditMemoForm() {
       const fd = new FormData();
       const payload = {
         ...formData,
+        salesInvoiceId: formData.salesInvoiceId || undefined,
         items: formData.items.map(it => ({
           ...it,
           item: typeof it.item === "object" ? it.item._id : it.item,
@@ -586,7 +768,7 @@ function CreditMemoForm() {
       const method = isEdit ? "put" : "post";
       await axios({ method, url, data: fd, headers: { Authorization: `Bearer ${token}` } });
       toast.success(isEdit ? "Credit Memo updated" : "Credit Memo created");
-      router.push("/admin/credit-memo-view");
+      router.push("/admin/credit-memo-veiw");
     } catch (err) {
       toast.error(err.response?.data?.error || "Error saving Credit Memo");
     } finally { setSubmitting(false); }
@@ -598,7 +780,7 @@ function CreditMemoForm() {
     <div className="min-h-screen bg-gray-50">
       <ToastContainer position="top-right" autoClose={3000} />
       <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6">
-        <button onClick={() => router.push("/admin/credit-memo-view")} className="flex items-center gap-1.5 text-indigo-600 font-semibold text-sm mb-4">
+        <button onClick={() => router.push("/admin/credit-memo-veiw")} className="flex items-center gap-1.5 text-indigo-600 font-semibold text-sm mb-4">
           <FaArrowLeft className="text-xs" /> Back to List
         </button>
 
@@ -751,7 +933,7 @@ function CreditMemoForm() {
 
         {/* Action Buttons */}
         <div className="flex items-center justify-between pt-4 pb-10">
-          <button onClick={() => router.push("/admin/credit-memo-view")} className="px-6 py-2.5 rounded-xl bg-white border border-gray-200 font-bold text-sm">Cancel</button>
+          <button onClick={() => router.push("/admin/credit-memo-veiw")} className="px-6 py-2.5 rounded-xl bg-white border border-gray-200 font-bold text-sm">Cancel</button>
           <button onClick={handleSubmit} disabled={submitting} className="px-8 py-2.5 rounded-xl text-white font-bold text-sm shadow-lg bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-300">{submitting ? "Saving..." : isEdit ? "Update Credit Memo" : "Create Credit Memo"}</button>
         </div>
       </div>

@@ -61,8 +61,23 @@ async function genNumber(companyId, type) {
 // ─── Helper to find system account by name ───────────────────
 async function findAccount(companyId, name) {
   const acc = await AccountHead.findOne({ companyId, name, isActive: true });
-  if (!acc) throw new Error(`Account not found: "${name}". Please create it in Chart of Accounts.`);
-  return acc;
+  if (acc) return acc;
+
+  const systemAccounts = {
+    "Accounts Receivable": { type: "Asset", group: "Accounts Receivable", balanceType: "Debit" },
+    "Accounts Payable": { type: "Liability", group: "Current Liability", balanceType: "Credit" },
+    "Sales Revenue": { type: "Income", group: "Direct Income", balanceType: "Credit" },
+    "Sales Returns": { type: "Expense", group: "Direct Expense", balanceType: "Debit" },
+    "Purchase": { type: "Expense", group: "Direct Expense", balanceType: "Debit" },
+    "Purchase Returns": { type: "Income", group: "Direct Income", balanceType: "Credit" },
+  };
+  const definition = systemAccounts[name];
+  if (!definition) throw new Error(`Account not found: "${name}". Please create it in Chart of Accounts.`);
+  return AccountHead.findOneAndUpdate(
+    { companyId, name },
+    { $setOnInsert: { companyId, name, ...definition, isActive: true, isSystemAccount: true } },
+    { new: true, upsert: true }
+  );
 }
 
 // ─── Helper to find Accounts Payable control account ─────────
@@ -360,6 +375,36 @@ export async function autoPaymentPaid({
     console.error("autoPaymentPaid failed:", error);
     throw new Error(`Failed to create auto payment: ${error.message}`);
   }
+}
+
+export async function autoCreditNote({ companyId, amount, partyId, partyName, referenceId, referenceNumber, narration, date, createdBy }) {
+  if (!companyId || !amount || amount <= 0 || !partyId || !referenceId || !createdBy) throw new Error("Missing required fields for autoCreditNote");
+  const existing = await Transaction.findOne({ companyId, type: "Credit Note", referenceId, status: "Posted" });
+  if (existing) return existing;
+  const [salesReturns, receivable] = await Promise.all([findAccount(companyId, "Sales Returns"), findAccount(companyId, "Accounts Receivable")]);
+  const txn = await Transaction.create({
+    companyId, transactionNumber: await genNumber(companyId, "Credit Note"), type: "Credit Note", date: date || new Date(), totalAmount: amount,
+    lines: [{ accountId: salesReturns._id, accountName: salesReturns.name, type: "Debit", amount }, { accountId: receivable._id, accountName: receivable.name, type: "Credit", amount }],
+    partyType: "Customer", partyId, partyName: partyName || "Customer", referenceType: "CreditNote", referenceId, referenceNumber,
+    narration: narration || `Credit Note ${referenceNumber}`, status: "Posted", createdBy,
+  });
+  await postLedger(txn);
+  return txn;
+}
+
+export async function autoDebitNote({ companyId, amount, partyId, partyName, referenceId, referenceNumber, narration, date, createdBy }) {
+  if (!companyId || !amount || amount <= 0 || !partyId || !referenceId || !createdBy) throw new Error("Missing required fields for autoDebitNote");
+  const existing = await Transaction.findOne({ companyId, type: "Debit Note", referenceId, status: "Posted" });
+  if (existing) return existing;
+  const [payable, purchaseReturns] = await Promise.all([getAccountsPayable(companyId), findAccount(companyId, "Purchase Returns")]);
+  const txn = await Transaction.create({
+    companyId, transactionNumber: await genNumber(companyId, "Debit Note"), type: "Debit Note", date: date || new Date(), totalAmount: amount,
+    lines: [{ accountId: payable._id, accountName: payable.name, type: "Debit", amount }, { accountId: purchaseReturns._id, accountName: purchaseReturns.name, type: "Credit", amount }],
+    partyType: "Supplier", partyId, partyName: partyName || "Supplier", referenceType: "DebitNote", referenceId, referenceNumber,
+    narration: narration || `Debit Note ${referenceNumber}`, status: "Posted", createdBy,
+  });
+  await postLedger(txn);
+  return txn;
 }
 
 // ════════════════════════════════════════════════════════════

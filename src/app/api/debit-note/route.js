@@ -10,6 +10,7 @@ import StockMovement from "@/models/StockMovement";
 import Warehouse from "@/models/warehouseModels";
 import { getTokenFromHeader, verifyJWT } from "@/lib/auth";
 import Counter from "@/models/Counter";
+import { autoDebitNote } from "@/lib/autoTransaction";
 import item from "@/models/ItemModels";
 import supplier from "@/models/SupplierModels";
 
@@ -221,6 +222,14 @@ export async function POST(req) {
 
     await session.commitTransaction();
     session.endSession();
+
+    try {
+      await autoDebitNote({
+        companyId: decoded.companyId, amount: Number(debitNote.grandTotal) || 0, partyId: debitNote.supplier,
+        partyName: debitNote.supplierName, referenceId: debitNote._id, referenceNumber: debitNote.documentNumberDebitNote,
+        narration: `Debit Note ${debitNote.documentNumberDebitNote}`, date: debitNote.postingDate, createdBy: decoded.id,
+      });
+    } catch (accountingError) { console.error("Debit note accounting failed:", accountingError.message); }
 
     return NextResponse.json({ success: true, message: "Debit Note created", data: debitNote }, { status: 201 });
   } catch (error) {

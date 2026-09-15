@@ -1,177 +1,55 @@
-// app/admin/textiles/reports/page.jsx
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import api from "@/lib/api";
-import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-  ResponsiveContainer,
-  PieChart,
-  Pie,
-  Cell,
-} from "recharts";
-import { FaChartLine, FaRecycle, FaIndustry, FaBox } from "react-icons/fa";
+import { Bar, BarChart, CartesianGrid, Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { ArrowRight, Boxes, Factory, PackageCheck, Percent, Recycle, RefreshCw, Scissors } from "lucide-react";
 import { toast } from "react-toastify";
 
+const COLORS = ["#4f46e5", "#0ea5e9", "#22c55e", "#f59e0b", "#ef4444", "#a855f7", "#14b8a6"];
+const emptyReport = { summary: { totalDocuments: 0, activeDocuments: 0, totalInput: 0, totalOutput: 0, totalWaste: 0, totalRejected: 0, wastePercent: 0, availableRolls: 0, availableLength: 0, productionCost: 0, passedInspections: 0, failedInspections: 0 }, byDoctype: [], byStatus: [], processWip: [], monthlyWaste: [], shadeDistribution: [], recentDocuments: [] };
+const quantity = (value) => new Intl.NumberFormat("en-IN", { maximumFractionDigits: 2 }).format(Number(value || 0));
+const currency = (value) => new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(Number(value || 0));
+
+function MetricCard({ label, value, detail, icon: Icon, tone = "indigo" }) {
+  const tones = { indigo: "bg-indigo-50 text-indigo-600", emerald: "bg-emerald-50 text-emerald-600", amber: "bg-amber-50 text-amber-600", sky: "bg-sky-50 text-sky-600" };
+  return <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><div className="flex items-start justify-between gap-3"><div><p className="text-xs font-bold uppercase tracking-wide text-slate-400">{label}</p><p className="mt-1 text-2xl font-extrabold text-slate-900">{value}</p>{detail && <p className="mt-1 text-xs text-slate-500">{detail}</p>}</div><span className={`grid h-10 w-10 place-items-center rounded-xl ${tones[tone]}`}><Icon size={19} /></span></div></div>;
+}
+function EmptyState({ children }) { return <div className="grid h-[250px] place-items-center text-center text-sm text-slate-400">{children}</div>; }
+
 export default function TextileReportsPage() {
+  const [report, setReport] = useState(emptyReport);
   const [loading, setLoading] = useState(true);
-  const [efficiency, setEfficiency] = useState({ overall: 85, machine: 90 });
-  const [wasteData, setWasteData] = useState([]);
-  const [shadeSales, setShadeSales] = useState([]);
-  const [error, setError] = useState(null);
-
-  useEffect(() => {
-    fetchReports();
-  }, []);
-
-  const fetchReports = async () => {
-    setLoading(true);
-    setError(null);
+  const [error, setError] = useState("");
+  const fetchReports = useCallback(async (showToast = false) => {
+    setLoading(true); setError("");
     try {
-      const token = localStorage.getItem("token");
-      const headers = { headers: { Authorization: `Bearer ${token}` } };
-
-      // Simulate API calls – replace with actual endpoints
-      const [wasteRes, shadeRes] = await Promise.all([
-        api.get("/textiles/reports/waste", headers),
-        api.get("/textiles/reports/shade-sales", headers),
-      ]);
-
-      setWasteData(wasteRes.data.data || [
-        { month: "Jan", waste: 12 },
-        { month: "Feb", waste: 15 },
-        { month: "Mar", waste: 10 },
-        { month: "Apr", waste: 18 },
-        { month: "May", waste: 8 },
-        { month: "Jun", waste: 14 },
-      ]);
-      setShadeSales(shadeRes.data.data || [
-        { name: "Red", value: 400 },
-        { name: "Blue", value: 300 },
-        { name: "Green", value: 200 },
-        { name: "Yellow", value: 100 },
-      ]);
+      const response = await api.get("/textiles/reports/flow");
+      if (!response.data?.success) throw new Error(response.data?.message || "Unable to load textile reports");
+      setReport({ ...emptyReport, ...response.data.data, summary: { ...emptyReport.summary, ...response.data.data?.summary } });
+      if (showToast) toast.success("Textile reports refreshed");
     } catch (err) {
-      setError("Failed to load reports");
-      toast.error("Failed to load reports");
-    } finally {
-      setLoading(false);
-    }
-  };
+      const message = err.response?.data?.message || err.message || "Failed to load textile reports";
+      setError(message); if (showToast) toast.error(message);
+    } finally { setLoading(false); }
+  }, []);
+  useEffect(() => { fetchReports(); }, [fetchReports]);
 
-  const COLORS = ["#6366f1", "#0ea5e9", "#22c55e", "#f59e0b", "#ef4444"];
+  const { summary, monthlyWaste, shadeDistribution, processWip, byStatus, byDoctype, recentDocuments } = report;
+  const yieldPercent = summary.totalInput > 0 ? (summary.totalOutput / summary.totalInput) * 100 : 0;
+  const inspected = summary.passedInspections + summary.failedInspections;
+  const passPercent = inspected > 0 ? (summary.passedInspections / inspected) * 100 : 0;
 
-  return (
-    <div className="p-6 bg-[#f2f5f9] min-h-screen">
-      <div className="flex items-center gap-3 mb-6">
-        <FaChartLine size={28} className="text-indigo-600" />
-        <div>
-          <h1 className="text-2xl font-extrabold text-gray-900">Textile Reports</h1>
-          <p className="text-sm text-gray-500">Waste, efficiency & shade-wise performance</p>
-        </div>
-      </div>
-
-      {error && <div className="bg-red-50 border border-red-200 text-red-700 p-4 rounded-xl mb-6">⚠️ {error}</div>}
-
-      {loading ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {[...Array(4)].map((_, i) => (
-            <div key={i} className="bg-white rounded-2xl p-6 animate-pulse">
-              <div className="h-4 bg-gray-200 rounded w-24 mb-4" />
-              <div className="h-48 bg-gray-200 rounded" />
-            </div>
-          ))}
-        </div>
-      ) : (
-        <>
-          {/* KPI Cards */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-            <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
-              <div className="flex items-center gap-3">
-                <FaRecycle className="text-emerald-500 text-xl" />
-                <div>
-                  <p className="text-xs text-gray-400 uppercase">Overall Waste</p>
-                  <p className="text-xl font-bold text-gray-800">12.4%</p>
-                </div>
-              </div>
-            </div>
-            <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
-              <div className="flex items-center gap-3">
-                <FaIndustry className="text-blue-500 text-xl" />
-                <div>
-                  <p className="text-xs text-gray-400 uppercase">Machine Efficiency</p>
-                  <p className="text-xl font-bold text-gray-800">88%</p>
-                </div>
-              </div>
-            </div>
-            <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
-              <div className="flex items-center gap-3">
-                <FaBox className="text-amber-500 text-xl" />
-                <div>
-                  <p className="text-xs text-gray-400 uppercase">Total Lots</p>
-                  <p className="text-xl font-bold text-gray-800">42</p>
-                </div>
-              </div>
-            </div>
-            <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
-              <div className="flex items-center gap-3">
-                <FaChartLine className="text-purple-500 text-xl" />
-                <div>
-                  <p className="text-xs text-gray-400 uppercase">Shades Used</p>
-                  <p className="text-xl font-bold text-gray-800">18</p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Charts */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Waste Chart */}
-            <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
-              <h3 className="text-sm font-bold text-gray-700 mb-4">Monthly Waste %</h3>
-              <ResponsiveContainer width="100%" height={250}>
-                <BarChart data={wasteData}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="month" />
-                  <YAxis />
-                  <Tooltip />
-                  <Bar dataKey="waste" fill="#6366f1" />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-
-            {/* Shade Sales Pie */}
-            <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
-              <h3 className="text-sm font-bold text-gray-700 mb-4">Shade-wise Sales</h3>
-              <ResponsiveContainer width="100%" height={250}>
-                <PieChart>
-                  <Pie
-                    data={shadeSales}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={60}
-                    outerRadius={80}
-                    fill="#8884d8"
-                    dataKey="value"
-                    label
-                  >
-                    {shadeSales.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                    ))}
-                  </Pie>
-                  <Tooltip />
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-        </>
-      )}
-    </div>
-  );
+  return <main className="min-h-screen bg-slate-50 p-4 md:p-8"><div className="mx-auto max-w-7xl">
+    <div className="mb-7 flex flex-wrap items-end justify-between gap-4"><div><p className="text-xs font-bold uppercase tracking-[0.18em] text-indigo-600">Live production data</p><h1 className="mt-2 text-3xl font-extrabold text-slate-900">Textile Reports</h1><p className="mt-2 text-sm text-slate-500">Production, process, quality, roll and costing data from your textile documents.</p></div><div className="flex gap-2"><Link href="/admin/textiles/flow" className="inline-flex items-center gap-2 rounded-xl border border-indigo-200 bg-white px-4 py-2.5 text-sm font-bold text-indigo-700"><Scissors size={16} />View flow<ArrowRight size={15} /></Link><button type="button" onClick={() => fetchReports(true)} disabled={loading} className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-bold text-white disabled:opacity-60"><RefreshCw size={16} className={loading ? "animate-spin" : ""} />Refresh</button></div></div>
+    {error && <div className="mb-6 flex items-center justify-between gap-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700"><span>{error}</span><button type="button" onClick={() => fetchReports()} className="font-bold underline">Retry</button></div>}
+    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><MetricCard label="Production yield" value={`${yieldPercent.toFixed(1)}%`} detail={`${quantity(summary.totalOutput)} output from ${quantity(summary.totalInput)} input`} icon={Percent} /><MetricCard label="Waste & rejection" value={`${Number(summary.wastePercent).toFixed(2)}%`} detail={`${quantity(summary.totalWaste + summary.totalRejected)} recorded quantity`} icon={Recycle} tone="amber" /><MetricCard label="Available rolls" value={quantity(summary.availableRolls)} detail={`${quantity(summary.availableLength)} available length`} icon={PackageCheck} tone="emerald" /><MetricCard label="Quality pass rate" value={inspected ? `${passPercent.toFixed(1)}%` : "—"} detail={`${quantity(summary.passedInspections)} passed / ${quantity(inspected)} inspected`} icon={Factory} tone="sky" /></div>
+    <div className="mt-6 grid gap-6 lg:grid-cols-2"><section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><h2 className="text-base font-bold text-slate-900">Monthly waste</h2><p className="mt-1 text-sm text-slate-500">Waste and rejected quantity as a percentage of process input.</p>{monthlyWaste.length ? <ResponsiveContainer width="100%" height={260}><BarChart data={monthlyWaste} margin={{ top: 22, right: 8, left: -18, bottom: 0 }}><CartesianGrid strokeDasharray="3 3" vertical={false} /><XAxis dataKey="month" tickLine={false} axisLine={false} /><YAxis unit="%" tickLine={false} axisLine={false} /><Tooltip formatter={(value) => [`${value}%`, "Waste"]} /><Bar dataKey="wastePercent" name="Waste" fill="#4f46e5" radius={[6, 6, 0, 0]} /></BarChart></ResponsiveContainer> : <EmptyState>No production waste has been recorded yet.</EmptyState>}</section>
+    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><h2 className="text-base font-bold text-slate-900">Shade distribution</h2><p className="mt-1 text-sm text-slate-500">Fabric-roll quantity by shade.</p>{shadeDistribution.length ? <ResponsiveContainer width="100%" height={260}><PieChart><Pie data={shadeDistribution} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={58} outerRadius={88} paddingAngle={2}>{shadeDistribution.map((shade, index) => <Cell key={shade.name} fill={COLORS[index % COLORS.length]} />)}</Pie><Tooltip formatter={(value) => quantity(value)} /><Legend /></PieChart></ResponsiveContainer> : <EmptyState>No fabric rolls with shade data have been recorded yet.</EmptyState>}</section></div>
+    <div className="mt-6 grid gap-6 lg:grid-cols-2"><section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><h2 className="text-base font-bold text-slate-900">Process work in progress</h2><div className="mt-4 overflow-x-auto">{processWip.length ? <table className="w-full text-left text-sm"><thead className="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-400"><tr><th className="pb-3">Process</th><th className="pb-3 text-right">Jobs</th><th className="pb-3 text-right">Planned</th><th className="pb-3 text-right">Done</th><th className="pb-3 text-right">Balance</th></tr></thead><tbody>{processWip.map((row) => <tr key={row.process} className="border-b border-slate-100 last:border-0"><td className="py-3 font-semibold text-slate-700">{row.process}<span className="mt-1 block h-1.5 w-24 overflow-hidden rounded-full bg-slate-100"><span className="block h-full rounded-full bg-indigo-500" style={{ width: `${row.progress}%` }} /></span></td><td className="py-3 text-right text-slate-600">{row.jobs}</td><td className="py-3 text-right text-slate-600">{quantity(row.planned)}</td><td className="py-3 text-right text-slate-600">{quantity(row.done)}</td><td className="py-3 text-right font-semibold text-slate-800">{quantity(row.balance)}</td></tr>)}</tbody></table> : <EmptyState>No process orders have been recorded yet.</EmptyState>}</div></section>
+    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><h2 className="text-base font-bold text-slate-900">Document status</h2>{byStatus.length ? <ResponsiveContainer width="100%" height={260}><BarChart layout="vertical" data={byStatus.slice(0, 8)} margin={{ top: 18, right: 16, left: 30, bottom: 0 }}><CartesianGrid strokeDasharray="3 3" horizontal={false} /><XAxis type="number" allowDecimals={false} /><YAxis dataKey="name" type="category" width={90} tickLine={false} axisLine={false} /><Tooltip /><Bar dataKey="value" name="Documents" fill="#0ea5e9" radius={[0, 5, 5, 0]} /></BarChart></ResponsiveContainer> : <EmptyState>No textile documents have been recorded yet.</EmptyState>}</section></div>
+    <div className="mt-6 grid gap-6 lg:grid-cols-3"><section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm lg:col-span-2"><h2 className="text-base font-bold text-slate-900">Recent workflow documents</h2>{recentDocuments.length ? <div className="mt-4 overflow-x-auto"><table className="w-full text-left text-sm"><thead className="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-400"><tr><th className="pb-3">Document</th><th className="pb-3">Type</th><th className="pb-3">Status</th><th className="pb-3 text-right">Updated</th></tr></thead><tbody>{recentDocuments.map((doc) => <tr key={doc._id} className="border-b border-slate-100 last:border-0"><td className="py-3 font-semibold text-slate-700">{doc.documentNumber}</td><td className="py-3 text-slate-600">{doc.label}</td><td className="py-3"><span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">{doc.status || "Draft"}</span></td><td className="py-3 text-right text-xs text-slate-500">{doc.updatedAt ? new Date(doc.updatedAt).toLocaleDateString("en-IN") : "—"}</td></tr>)}</tbody></table></div> : <EmptyState>No textile workflow documents have been recorded yet.</EmptyState>}</section>
+    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><h2 className="text-base font-bold text-slate-900">Documents by type</h2>{byDoctype.length ? <div className="mt-3 space-y-3">{byDoctype.slice(0, 7).map((row) => <div key={row.doctype} className="flex items-center justify-between gap-3"><span className="min-w-0 truncate text-sm text-slate-600">{row.label}</span><span className="rounded-lg bg-indigo-50 px-2 py-1 text-xs font-bold text-indigo-700">{row.count}</span></div>)}</div> : <EmptyState><span><Boxes className="mx-auto mb-2" size={22} />No documents yet.</span></EmptyState>}<div className="mt-5 border-t border-slate-100 pt-4 text-sm"><span className="font-semibold text-slate-700">Production cost: </span><span className="font-bold text-slate-900">{currency(summary.productionCost)}</span><span className="ml-2 text-xs text-slate-400">from cost sheets</span></div></section></div>
+  </div></main>;
 }

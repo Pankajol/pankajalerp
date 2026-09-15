@@ -275,8 +275,11 @@ const ItemSection = ({ items, onItemChange, onAddItem, onRemoveItem, onItemSelec
       igstRate: taxOption === "IGST" ? (selectedItem.igstRate || gstRate) : 0,
       cgstAmount: cgst, sgstAmount: cgst, gstAmount: cgst * 2,
       priceAfterDiscount: basePrice - discount, totalAmount: total,
-      isNewItem: false, variant: null,
-      warehouse: "", warehouseName: "", warehouseCode: "",
+      isNewItem: false, variant: null, selectedVariantId: null,
+      // Selecting an item must not discard a warehouse already applied to this row.
+      warehouse: items[index]?.warehouse || "",
+      warehouseName: items[index]?.warehouseName || "",
+      warehouseCode: items[index]?.warehouseCode || "",
     };
     const variants = selectedItem.variants || [];
     if (variants.length > 0) {
@@ -328,6 +331,7 @@ const ItemSection = ({ items, onItemChange, onAddItem, onRemoveItem, onItemSelec
       itemName: variant.sku ? `${item.itemName} (${variant.sku})` : item.itemName,
       imageUrl: variant.imageUrl || item.imageUrl,
       variant: variantObj,
+      selectedVariantId: variant._id,
       priceAfterDiscount: basePrice - discount,
       totalAmount: total,
       cgstAmount: cgst, sgstAmount: cgst, gstAmount: cgst * 2,
@@ -426,6 +430,8 @@ const ItemSection = ({ items, onItemChange, onAddItem, onRemoveItem, onItemSelec
                 const isExpanded = expandedRow === index;
                 const isEven = index % 2 === 0;
                 const variants = filteredVariants[index] || [];
+                const selectedWarehouse = warehouses.find((wh) => String(wh._id) === String(item.warehouse));
+                const bins = selectedWarehouse?.binLocations || [];
 
                 return (
                   <React.Fragment key={index}>
@@ -534,6 +540,7 @@ const ItemSection = ({ items, onItemChange, onAddItem, onRemoveItem, onItemSelec
                               onItemChange(index, { target: { name: "warehouse", value: whId } });
                               onItemChange(index, { target: { name: "warehouseName", value: warehouse?.warehouseName || "" } });
                               onItemChange(index, { target: { name: "warehouseCode", value: warehouse?.warehouseCode || "" } });
+                              onItemChange(index, { target: { name: "selectedBin", value: null } });
                             }}
                           >
                             <option value="">Select Warehouse</option>
@@ -680,6 +687,7 @@ const ItemSection = ({ items, onItemChange, onAddItem, onRemoveItem, onItemSelec
                                       onItemChange(index, { target: { name: "warehouse", value: whId } });
                                       onItemChange(index, { target: { name: "warehouseName", value: warehouse?.warehouseName || "" } });
                                       onItemChange(index, { target: { name: "warehouseCode", value: warehouse?.warehouseCode || "" } });
+                                      onItemChange(index, { target: { name: "selectedBin", value: null } });
                                     }}
                                   >
                                     <option value="">Select Warehouse</option>
@@ -688,10 +696,24 @@ const ItemSection = ({ items, onItemChange, onAddItem, onRemoveItem, onItemSelec
                                 </div>
                               </div>
                               <div>
-                                <Lbl t="Status" />
-                                <div className="px-2 py-1.5 rounded-md bg-gray-50 text-gray-600 text-xs">
-                                  {item.warehouseName ? `Assigned to ${item.warehouseName}` : "No warehouse assigned"}
-                                </div>
+                                <Lbl t={bins.length ? "Bin Location *" : "Bin Location"} />
+                                {bins.length ? (
+                                  <select
+                                    className={inp()}
+                                    value={item.selectedBin?._id || item.selectedBin || ""}
+                                    onChange={(e) => {
+                                      const bin = bins.find((entry) => String(entry._id) === e.target.value) || null;
+                                      onItemChange(index, { target: { name: "selectedBin", value: bin } });
+                                    }}
+                                  >
+                                    <option value="">Select Bin</option>
+                                    {bins.map((bin) => <option key={bin._id} value={bin._id}>{bin.code}{bin.name ? ` — ${bin.name}` : ""}</option>)}
+                                  </select>
+                                ) : (
+                                  <div className="px-2 py-1.5 rounded-md bg-gray-50 text-gray-500 text-xs">
+                                    {item.warehouseName ? "No bin required" : "Select a warehouse first"}
+                                  </div>
+                                )}
                               </div>
                             </div>
 

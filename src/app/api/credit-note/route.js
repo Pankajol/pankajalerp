@@ -10,6 +10,7 @@ import StockMovement from "@/models/StockMovement";
 import Warehouse from "@/models/warehouseModels";
 import { getTokenFromHeader, verifyJWT } from "@/lib/auth";
 import Counter from "@/models/Counter";
+import { autoCreditNote } from "@/lib/autoTransaction";
 
 const { Types } = mongoose;
 
@@ -278,6 +279,12 @@ export async function POST(req) {
     if (!Array.isArray(creditNoteData.items) || creditNoteData.items.length === 0)
       throw new Error("Credit Note must contain at least one item.");
 
+    // A credit note may be created independently of a sales invoice. Mongoose
+    // cannot cast an empty string to the optional ObjectId field.
+    if (!creditNoteData.salesInvoiceId) {
+      delete creditNoteData.salesInvoiceId;
+    }
+
     session = await mongoose.startSession();
     let creditNote;
 
@@ -325,6 +332,13 @@ export async function POST(req) {
     }, session);
 
     session.endSession();
+    try {
+      await autoCreditNote({
+        companyId, amount: Number(creditNote.grandTotal) || 0, partyId: creditNote.customer,
+        partyName: creditNote.customerName, referenceId: creditNote._id, referenceNumber: creditNote.documentNumberCreditNote,
+        narration: `Credit Note ${creditNote.documentNumberCreditNote}`, date: creditNote.postingDate, createdBy: decoded.id,
+      });
+    } catch (accountingError) { console.error("Credit note accounting failed:", accountingError.message); }
     return NextResponse.json({ success: true, message: "Credit Note created successfully.", data: creditNote }, { status: 201 });
 
   } catch (error) {
