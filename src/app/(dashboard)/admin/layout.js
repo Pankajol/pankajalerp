@@ -506,6 +506,7 @@ export default function Layout({ children }) {
                   <SidebarItem href="/admin/supplier" icon={<HiUserGroup />} label="Supplier" onClick={closeSidebar} isActive={isActive("/admin/supplier")} />
                   <SidebarItem href="/admin/item" icon={<HiCube />} label="Item" onClick={closeSidebar} isActive={isActive("/admin/item")} />
                   <SidebarItem href="/admin/WarehouseDetailsForm" icon={<HiOutlineLibrary />} label="Warehouse Details" onClick={closeSidebar} isActive={isActive("/admin/WarehouseDetailsForm")} />
+                  <SidebarItem href="/admin/settings/code-series" icon={<HiCog />} label="Master Code Series" onClick={closeSidebar} isActive={isActive("/admin/settings/code-series")} />
                   <SidebarItem href="/admin/backup-settings" icon={<HiOutlineLibrary />} label="Backup Settings" onClick={closeSidebar} isActive={isActive("/admin/backup-settings")} />
                 </Section>
 

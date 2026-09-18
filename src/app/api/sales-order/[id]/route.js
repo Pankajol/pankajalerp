@@ -6,7 +6,7 @@ import dbConnect from '@/lib/db';
 import SalesOrder from '@/models/SalesOrder';
 import { getTokenFromHeader, verifyJWT } from '@/lib/auth';
 import { checkPermission } from "@/lib/checkPermission";
-import { v2 as cloudinary } from 'cloudinary';
+import cloudinary from "@/lib/cloudinary";
 
 export const config = { api: { bodyParser: false } };
 

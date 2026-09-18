@@ -1,17 +1,28 @@
 "use client";
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { RefreshCw, CheckCircle, XCircle } from "lucide-react";
 
 const fmtINR = (n) => new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR" }).format(n || 0);
 
 export default function BankReconciliationPage() {
   const [bankAccounts, setBankAccounts] = useState([]);
+  const [accountSearch, setAccountSearch] = useState("");
   const [selectedAccount, setSelectedAccount] = useState("");
   const [statementBalance, setStatementBalance] = useState("");
   const [asOfDate, setAsOfDate] = useState(new Date().toISOString().slice(0, 10));
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
   const token = () => localStorage.getItem("token") || "";
+
+  const visibleBankAccounts = useMemo(() => {
+    const term = accountSearch.trim().toLowerCase();
+    if (!term) return bankAccounts;
+    return bankAccounts.filter((account) =>
+      [account.name, account.code, account.group, account.type]
+        .filter(Boolean)
+        .some((value) => String(value).toLowerCase().includes(term))
+    );
+  }, [accountSearch, bankAccounts]);
 
   useEffect(() => {
     fetch("/api/accounts/heads?type=Asset&group=Bank Account", {
@@ -41,10 +52,19 @@ export default function BankReconciliationPage() {
         <div className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700">Bank Account</label>
+            <input
+              type="search"
+              value={accountSearch}
+              onChange={e => setAccountSearch(e.target.value)}
+              placeholder="Search by account name or code"
+              className="mt-1 w-full border rounded-lg p-2 text-sm"
+              aria-label="Search bank accounts"
+            />
             <select value={selectedAccount} onChange={e => setSelectedAccount(e.target.value)} className="mt-1 w-full border rounded-lg p-2">
               <option value="">Select account</option>
-              {bankAccounts.map(acc => <option key={acc._id} value={acc._id}>{acc.name} {acc.code ? `(${acc.code})` : ""}</option>)}
+              {visibleBankAccounts.map(acc => <option key={acc._id} value={acc._id}>{acc.name} {acc.code ? `(${acc.code})` : ""}</option>)}
             </select>
+            {accountSearch && visibleBankAccounts.length === 0 && <p className="mt-1 text-xs text-gray-500">No matching bank accounts.</p>}
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700">As of Date</label>

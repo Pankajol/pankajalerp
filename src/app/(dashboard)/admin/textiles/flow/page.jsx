@@ -26,7 +26,9 @@ const newHref = (slug) => `/admin/textiles/doctype/${slug}/new`;
 function DocumentRow({ slug, master = false }) {
   const config = textileDoctypes[slug];
   if (!config) return null;
-  return <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-100 bg-slate-50/80 p-3"><Link href={listHref(slug)} className="group min-w-0 flex-1"><strong className="block text-sm text-slate-800 group-hover:text-indigo-700">{config.label}</strong><span className="text-xs text-slate-400">{master ? "Reusable setup record" : "View records and current status"}</span></Link><div className="flex items-center gap-1.5"><Link href={listHref(slug)} className="rounded-lg px-3 py-2 text-xs font-bold text-slate-600 hover:bg-white hover:text-indigo-700">Open</Link><Link href={newHref(slug)} className="inline-flex items-center gap-1 rounded-lg bg-indigo-600 px-3 py-2 text-xs font-bold text-white hover:bg-indigo-700"><Plus size={13} />New</Link></div></div>;
+  const canonical = config.canonicalRoute;
+  const href = canonical || listHref(slug);
+  return <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-100 bg-slate-50/80 p-3"><Link href={href} className="group min-w-0 flex-1"><strong className="block text-sm text-slate-800 group-hover:text-indigo-700">{config.label}</strong><span className="text-xs text-slate-400">{canonical ? `Managed in ${config.canonicalLabel}` : master ? "Reusable setup record" : "View records and current status"}</span></Link><div className="flex items-center gap-1.5"><Link href={href} className="rounded-lg px-3 py-2 text-xs font-bold text-slate-600 hover:bg-white hover:text-indigo-700">{canonical ? "Manage" : "Open"}</Link>{!canonical && <Link href={newHref(slug)} className="inline-flex items-center gap-1 rounded-lg bg-indigo-600 px-3 py-2 text-xs font-bold text-white hover:bg-indigo-700"><Plus size={13} />New</Link>}</div></div>;
 }
 
 export default function TextileFlowPage() {

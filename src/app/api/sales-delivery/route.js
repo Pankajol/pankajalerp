@@ -10,7 +10,7 @@ import { getTokenFromHeader, verifyJWT } from "@/lib/auth";
 import { NextResponse } from "next/server";
 import formidable from "formidable";
 import { Readable } from "stream";
-import { v2 as cloudinary } from "cloudinary";
+import cloudinary from "@/lib/cloudinary";
 
 // --- Configuration ---
 export const config = { api: { bodyParser: false } };

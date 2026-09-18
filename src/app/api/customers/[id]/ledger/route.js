@@ -18,7 +18,7 @@ export async function GET(req, { params }) {
       return NextResponse.json({ success: false, message: "Invalid token" }, { status: 401 });
     }
 
-    const { id } = params;
+    const { id } = await params;
     const { searchParams } = new URL(req.url);
     const fiscalYear = searchParams.get("fiscalYear");
     const fromDate = searchParams.get("fromDate");

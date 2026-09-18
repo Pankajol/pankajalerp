@@ -6,15 +6,10 @@ import SlaPolicy from "@/models/helpdesk/SlaPolicy";
 import AccountHead from "@/models/accounts/AccountHead";
 
 import { getTokenFromHeader, verifyJWT } from "@/lib/auth";
-import { v2 as cloudinary } from "cloudinary";
+import { storeAttachment } from "@/lib/fileStorage";
+import { initialisePartyCodeSeries, reservePartyCode, normaliseManualPartyCode, isValidManualPartyCode, registerManualPartyCode } from "@/lib/partyCodeSeries";
 
 import mongoose from "mongoose";
-
-cloudinary.config({
-  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-  api_key: process.env.CLOUDINARY_API_KEY,
-  api_secret: process.env.CLOUDINARY_API_SECRET,
-});
 
 // ------------------- Helpers -------------------
 function isAuthorized(user) {
@@ -37,18 +32,9 @@ async function validateUser(req) {
   return { user: decoded, error: null };
 }
 
-async function uploadToCloudinary(fileBuffer, originalName) {
-  return new Promise((resolve, reject) => {
-    const uploadStream = cloudinary.uploader.upload_stream(
-      {
-        folder: "customers",
-        resource_type: "auto",
-        public_id: `${Date.now()}_${originalName.replace(/\s/g, "_")}`,
-      },
-      (error, result) => (error ? reject(error) : resolve(result.secure_url))
-    );
-    uploadStream.end(fileBuffer);
-  });
+async function uploadToCloudinary(fileBuffer, originalName, companyId) {
+  const uploaded = await storeAttachment(Object.assign(fileBuffer, { name: originalName }), { companyId, folder: "customers" });
+  return uploaded.url;
 }
 
 async function parseMultipart(req) {
@@ -212,7 +198,7 @@ export async function POST(req) {
       customerData = data;
       for (const file of files) {
         const buffer = Buffer.from(await file.arrayBuffer());
-        const url = await uploadToCloudinary(buffer, file.name);
+        const url = await uploadToCloudinary(buffer, file.name, user.companyId);
         uploadedUrls.push(url);
       }
     } else {
@@ -221,6 +207,18 @@ export async function POST(req) {
 
     // Remove _id if present (it's for updates only)
     delete customerData._id;
+
+    const suppliedCustomerCode = normaliseManualPartyCode(customerData.customerCode);
+    if (suppliedCustomerCode && !isValidManualPartyCode(suppliedCustomerCode)) {
+      return NextResponse.json({ success: false, message: "Customer code may contain only letters, numbers, hyphens, or underscores" }, { status: 400 });
+    }
+    await initialisePartyCodeSeries({ Model: Customer, companyId: user.companyId, field: "customerCode", prefix: "CUST", counterId: "customerCodeSeries" });
+    customerData.customerCode = suppliedCustomerCode || await reservePartyCode({ companyId: user.companyId, prefix: "CUST", counterId: "customerCodeSeries" });
+    if (suppliedCustomerCode) await registerManualPartyCode({ companyId: user.companyId, code: suppliedCustomerCode, prefix: "CUST", counterId: "customerCodeSeries" });
+    const duplicateCustomerCode = await Customer.exists({ companyId: user.companyId, customerCode: customerData.customerCode });
+    if (duplicateCustomerCode) {
+      return NextResponse.json({ success: false, message: "Customer code already exists" }, { status: 409 });
+    }
 
     // Validation
     if (
@@ -319,7 +317,7 @@ export async function PUT(req) {
       customerData = data;
       for (const file of files) {
         const buffer = Buffer.from(await file.arrayBuffer());
-        const url = await uploadToCloudinary(buffer, file.name);
+        const url = await uploadToCloudinary(buffer, file.name, user.companyId);
         uploadedUrls.push(url);
       }
     } else {

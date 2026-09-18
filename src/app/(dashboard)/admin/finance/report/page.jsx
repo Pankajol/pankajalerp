@@ -1,5 +1,6 @@
 "use client";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
+import { getFiscalYear, getFiscalYearOptions } from "@/lib/fiscalYear";
 
 const fmtINR = n => new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(n || 0);
 const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
@@ -82,7 +83,7 @@ function ProfitLoss({ data, totals }) {
           <div key={item._id} style={{ display:"flex",justifyContent:"space-between",padding:"9px 16px",borderBottom:"1px solid rgba(255,255,255,0.03)" }}
             onMouseEnter={e=>e.currentTarget.style.background="rgba(255,255,255,0.02)"}
             onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
-            <span style={{ fontFamily:"'Syne',sans-serif",fontSize:14,color:"#e2e8f0" }}>{item.accountName}</span>
+            <span style={{ fontFamily:"'Syne',sans-serif",fontSize:14,color:"#e2e8f0" }}>{item.accountName || item.name || "Unnamed account"}</span>
             <span style={{ fontFamily:"'DM Mono',monospace",fontSize:13,color,fontWeight:500 }}>{fmtINR(Math.abs(item.closingBalance))}</span>
           </div>
         ))}
@@ -124,6 +125,17 @@ function BalanceSheet({ data, totals }) {
   if (!data) return null;
   const { assets, liabilities, equity } = data;
 
+  const grouped = section => {
+    if (section?.grouped) return section.grouped;
+    return (section?.items || []).reduce((groups, item) => {
+      const group = item.group || "Other";
+      if (!groups[group]) groups[group] = { items: [], total: 0 };
+      groups[group].items.push(item);
+      groups[group].total += Math.abs(item.closingBalance || 0);
+      return groups;
+    }, {});
+  };
+
   const renderSection = (grouped, color, label) => (
     <div style={{ background:`${color}03`,border:`1px solid ${color}15`,borderRadius:12,overflow:"hidden",marginBottom:12 }}>
       <div style={{ padding:"12px 16px",borderBottom:`1px solid ${color}15`,fontFamily:"'Syne',sans-serif",fontWeight:700,fontSize:14,color }}>{label}</div>
@@ -132,7 +144,7 @@ function BalanceSheet({ data, totals }) {
           <div style={{ fontFamily:"'DM Mono',monospace",fontSize:10,color:"#475569",textTransform:"uppercase",letterSpacing:2,padding:"8px 16px 4px" }}>{group}</div>
           {items.map(item=>(
             <div key={item._id} style={{ display:"flex",justifyContent:"space-between",padding:"8px 16px",borderBottom:"1px solid rgba(255,255,255,0.02)" }}>
-              <span style={{ fontFamily:"'Syne',sans-serif",fontSize:13,color:"#94a3b8" }}>{item.accountName}</span>
+              <span style={{ fontFamily:"'Syne',sans-serif",fontSize:13,color:"#94a3b8" }}>{item.accountName || item.name || "Unnamed account"}</span>
               <span style={{ fontFamily:"'DM Mono',monospace",fontSize:13,color,fontWeight:500 }}>{fmtINR(Math.abs(item.closingBalance))}</span>
             </div>
           ))}
@@ -145,7 +157,7 @@ function BalanceSheet({ data, totals }) {
     <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:16 }}>
       <div>
         <div style={{ fontFamily:"'DM Mono',monospace",fontSize:11,color:"#475569",textTransform:"uppercase",letterSpacing:2,marginBottom:10 }}>Assets</div>
-        {renderSection(assets?.grouped, "#38bdf8", "Assets")}
+        {renderSection(grouped(assets), "#38bdf8", "Assets")}
         <div style={{ padding:"14px 16px",background:"rgba(56,189,248,0.06)",border:"1px solid rgba(56,189,248,0.2)",borderRadius:10,display:"flex",justifyContent:"space-between" }}>
           <span style={{ fontFamily:"'Syne',sans-serif",fontWeight:700,color:"#f1f5f9" }}>Total Assets</span>
           <span style={{ fontFamily:"'Syne',sans-serif",fontWeight:800,fontSize:18,color:"#38bdf8" }}>{fmtINR(totals?.totalAssets)}</span>
@@ -153,8 +165,8 @@ function BalanceSheet({ data, totals }) {
       </div>
       <div>
         <div style={{ fontFamily:"'DM Mono',monospace",fontSize:11,color:"#475569",textTransform:"uppercase",letterSpacing:2,marginBottom:10 }}>Liabilities + Equity</div>
-        {renderSection(liabilities?.grouped, "#f472b6", "Liabilities")}
-        {renderSection(equity?.grouped, "#a78bfa", "Equity")}
+        {renderSection(grouped(liabilities), "#f472b6", "Liabilities")}
+        {renderSection(grouped(equity), "#a78bfa", "Equity")}
         {totals?.retainedEarnings!=null&&(
           <div style={{ padding:"10px 16px",borderBottom:"1px solid rgba(255,255,255,0.04)",display:"flex",justifyContent:"space-between" }}>
             <span style={{ fontFamily:"'Syne',sans-serif",fontSize:13,color:"#a78bfa" }}>Retained Earnings (Net Profit)</span>
@@ -273,13 +285,20 @@ function LedgerStatement({ data }) {
 export default function ReportsPage() {
   const token = ()=>typeof window!=="undefined"?localStorage.getItem("token")||"":"";
   const [activeReport, setActiveReport] = useState("trial-balance");
-  const [fiscalYear, setFiscalYear]     = useState(`${new Date().getFullYear()-1}-${String(new Date().getFullYear()).slice(2)}`);
+  const [fiscalYear, setFiscalYear]     = useState(() => getFiscalYear());
   const [reportData, setReportData]     = useState(null);
   const [loading, setLoading]           = useState(false);
   const [toasts, setToasts]             = useState([]);
   const [accounts, setAccounts]         = useState([]);
   const [selectedAccount, setSelectedAccount] = useState("");
+  const [accountSearch, setAccountSearch] = useState("");
   const toastId = useRef(0);
+  const fiscalYearOptions = useMemo(() => getFiscalYearOptions(), []);
+  const visibleAccounts = useMemo(() => {
+    const query = accountSearch.trim().toLowerCase();
+    return accounts.filter((account) => !query || [account.name, account.code, account.type]
+      .filter(Boolean).some((value) => String(value).toLowerCase().includes(query)));
+  }, [accounts, accountSearch]);
 
   const addToast = (msg, type="success")=>{
     const id=++toastId.current;
@@ -307,9 +326,9 @@ export default function ReportsPage() {
       const rpt = REPORTS.find(r=>r.id===activeReport);
       let url   = rpt.url;
       if (activeReport==="ledger") {
-        if (!selectedAccount) { addToast("Please select an account","error"); setLoading(false); return; }
-        url = `${url}/${selectedAccount}?fiscalYear=${fiscalYear}`;
-      } else {
+        if (!selectedAccount) { setLoading(false); return; }
+        url = `${url}?accountId=${encodeURIComponent(selectedAccount)}${fiscalYear === "all" ? "" : `&fiscalYear=${encodeURIComponent(fiscalYear)}`}`;
+      } else if (fiscalYear !== "all") {
         url = `${url}?fiscalYear=${fiscalYear}`;
       }
       const res  = await fetch(url,{headers:{Authorization:`Bearer ${token()}`}});
@@ -366,15 +385,20 @@ export default function ReportsPage() {
             {/* Fiscal year */}
             <select value={fiscalYear} onChange={e=>setFiscalYear(e.target.value)}
               style={{ padding:"9px 14px",borderRadius:10,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.1)",color:"#e2e8f0",fontFamily:"'DM Mono',monospace",fontSize:12,outline:"none",colorScheme:"dark",marginLeft:"auto" }}>
-              {[2024,2025,2026].map(y=><option key={y} value={`${y}-${String(y+1).slice(2)}`}>{y}-{String(y+1).slice(2)}</option>)}
+              <option value="all">All periods</option>
+              {fiscalYearOptions.map(({ value, label }) => <option key={value} value={value}>{label}</option>)}
             </select>
             {/* Account selector for ledger */}
             {activeReport==="ledger"&&(
-              <select value={selectedAccount} onChange={e=>setSelectedAccount(e.target.value)}
-                style={{ padding:"9px 14px",borderRadius:10,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.1)",color:selectedAccount?"#e2e8f0":"#475569",fontFamily:"'DM Mono',monospace",fontSize:12,outline:"none",colorScheme:"dark",minWidth:200 }}>
-                <option value="">-- Select Account --</option>
-                {accounts.map(a=><option key={a._id} value={a._id}>{a.name}</option>)}
-              </select>
+              <>
+                <input value={accountSearch} onChange={e=>setAccountSearch(e.target.value)} placeholder="Search account…" aria-label="Search ledger account"
+                  style={{ padding:"9px 14px",borderRadius:10,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.1)",color:"#e2e8f0",fontFamily:"'DM Mono',monospace",fontSize:12,outline:"none",minWidth:180 }} />
+                <select value={selectedAccount} onChange={e=>setSelectedAccount(e.target.value)}
+                  style={{ padding:"9px 14px",borderRadius:10,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.1)",color:selectedAccount?"#e2e8f0":"#475569",fontFamily:"'DM Mono',monospace",fontSize:12,outline:"none",colorScheme:"dark",minWidth:200 }}>
+                  <option value="">-- Select Account --</option>
+                  {visibleAccounts.map(a=><option key={a._id} value={a._id}>{a.name}{a.code ? ` (${a.code})` : ""}</option>)}
+                </select>
+              </>
             )}
           </div>
 
@@ -386,7 +410,7 @@ export default function ReportsPage() {
                 <h2 style={{ fontFamily:"'Syne',sans-serif",fontWeight:700,fontSize:18,color:"#f1f5f9",margin:0 }}>
                   {currentReport?.icon} {currentReport?.label}
                 </h2>
-                <div style={{ fontFamily:"'DM Mono',monospace",fontSize:11,color:"#475569",marginTop:3 }}>FY {fiscalYear}</div>
+                <div style={{ fontFamily:"'DM Mono',monospace",fontSize:11,color:"#475569",marginTop:3 }}>{fiscalYear === "all" ? "All posted periods" : `FY ${fiscalYear}`}</div>
               </div>
               <button onClick={loadReport} disabled={loading}
                 style={{ padding:"8px 16px",borderRadius:9,border:"1px solid rgba(99,102,241,0.3)",background:"rgba(99,102,241,0.1)",color:"#818cf8",fontFamily:"'DM Mono',monospace",fontSize:12,cursor:loading?"not-allowed":"pointer",display:"flex",alignItems:"center",gap:6 }}>
@@ -406,8 +430,8 @@ export default function ReportsPage() {
                 <>
                   {activeReport==="trial-balance"  && <TrialBalance  data={reportData.data}  totals={reportData.totals} />}
                   {activeReport==="profit-loss"    && <ProfitLoss    data={reportData.data}  totals={reportData.totals} />}
-                  {activeReport==="balance-sheet"  && <BalanceSheet  data={reportData.data}  totals={reportData.totals} />}
-                  {activeReport==="ledger"         && <LedgerStatement data={reportData} />}
+                  {activeReport==="balance-sheet"  && <BalanceSheet  data={reportData.data}  totals={{ ...reportData.totals, balanced: reportData.balanced }} />}
+                  {activeReport==="ledger"         && <LedgerStatement data={reportData.data} />}
                   {(activeReport==="ageing-customer"||activeReport==="ageing-supplier") && <AgeingTable data={reportData.data} buckets={reportData.buckets} type={activeReport==="ageing-customer"?"Customer":"Supplier"} />}
                 </>
               )}

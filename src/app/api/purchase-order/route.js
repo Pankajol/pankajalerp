@@ -7,7 +7,7 @@ import PurchaseQuotation from "@/models/PurchaseQuotationModel";
 import Inventory from "@/models/Inventory";
 import StockMovement from "@/models/StockMovement";
 import { getTokenFromHeader, verifyJWT } from "@/lib/auth";
-import { v2 as cloudinary } from "cloudinary";
+import cloudinary from "@/lib/cloudinary";
 import Counter from "@/models/Counter";
 import Supplier from "@/models/SupplierModels";
 import ItemModels from "@/models/ItemModels";

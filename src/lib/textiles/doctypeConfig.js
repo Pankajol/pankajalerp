@@ -147,6 +147,16 @@ export const textileDoctypes = {
   },
 };
 
+// These records already have a dedicated, operational Textile module.  The
+// DocType Center must link to that source of truth instead of creating a
+// second generic TextileDocument record for the same business event.
+Object.assign(textileDoctypes, {
+  "dyeing-recipe": { ...textileDoctypes["dyeing-recipe"], canonicalRoute: "/admin/textiles/dyeing-recipes", canonicalLabel: "Dyeing Recipes" },
+  "fabric-inspection": { ...textileDoctypes["fabric-inspection"], canonicalRoute: "/admin/textiles/quality-inspection", canonicalLabel: "Quality Inspection" },
+  "job-work-receipt": { ...textileDoctypes["job-work-receipt"], canonicalRoute: "/admin/textiles/job-work/receipts", canonicalLabel: "Job Work Receipts" },
+  "production-cost-sheet": { ...textileDoctypes["production-cost-sheet"], canonicalRoute: "/admin/textiles/costing", canonicalLabel: "Costing" },
+});
+
 export function getTextileDoctype(slug) {
   return textileDoctypes[slug] || null;
 }

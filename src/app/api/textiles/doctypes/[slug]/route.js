@@ -47,6 +47,7 @@ export async function POST(req, { params }) {
   const { slug } = await params;
   const config = getTextileDoctype(slug);
   if (!config) return NextResponse.json({ success: false, message: "Unknown textile DocType" }, { status: 404 });
+  if (config.canonicalRoute) return NextResponse.json({ success: false, message: `Use ${config.canonicalLabel} as the source of truth for this record.`, canonicalRoute: config.canonicalRoute }, { status: 409 });
 
   const body = await req.json();
   const data = cleanTextileData(config, body.data || body);

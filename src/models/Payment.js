@@ -18,7 +18,7 @@ const PaymentSchema = new Schema(
     createdBy: { type: Schema.Types.ObjectId, ref: "User" },
 
     // Transaction identification
-    paymentNumber: { type: String, unique: true },   // auto-generated: PAY-001 or REC-001
+    paymentNumber: { type: String },   // auto-generated per company
     type: { type: String, enum: ["Payment", "Receipt"], required: true }, // Payment = out, Receipt = in
     paymentDate: { type: Date, default: Date.now, required: true },
 
@@ -53,16 +53,20 @@ PaymentSchema.pre("save", async function (next) {
     try {
       const prefix = this.type === "Payment" ? "PAY" : "REC";
       const counter = await Counter.findOneAndUpdate(
-        { id: `payment_${prefix}` },
+        { companyId: this.companyId, id: `payment_${prefix}` },
         { $inc: { seq: 1 } },
-        { new: true, upsert: true }
+        { new: true, upsert: true, session: this.$session() || undefined }
       );
-      this.paymentNumber = `${prefix}-${String(counter.seq).padStart(4, "0")}`;
+      // Include a tenant fragment so legacy global unique indexes cannot clash
+      // when two companies create their first payment at the same time.
+      this.paymentNumber = `${prefix}-${String(this.companyId).slice(-6)}-${String(counter.seq).padStart(4, "0")}`;
     } catch (err) {
       return next(err);
     }
   }
   next();
 });
+
+PaymentSchema.index({ companyId: 1, paymentNumber: 1 }, { unique: true });
 
 export default mongoose.models.Payment || mongoose.model("Payment", PaymentSchema);

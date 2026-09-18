@@ -1,5 +1,6 @@
 import TextileDocument from "@/models/textiles/TextileDocument";
 import { textileDoctypes } from "@/lib/textiles/doctypeConfig";
+import { initialisePartyCodeSeries, reservePartyCode } from "@/lib/partyCodeSeries";
 
 export function getTextileDoctype(slug) {
   return textileDoctypes[slug] || null;
@@ -62,12 +63,15 @@ export function missingRequiredFields(config, data) {
 }
 
 export async function nextDocumentNumber(companyId, slug, prefix) {
-  const latest = await TextileDocument.findOne({ companyId, doctype: slug })
-    .sort({ createdAt: -1 })
-    .select("documentNumber")
-    .lean();
-  const previous = Number(String(latest?.documentNumber || "").match(/(\d+)$/)?.[1] || 0);
-  return `${prefix}-${String(previous + 1).padStart(5, "0")}`;
+  const counterId = `textileDoctype_${slug}`;
+  const activePrefix = await initialisePartyCodeSeries({
+    Model: TextileDocument,
+    companyId,
+    field: "documentNumber",
+    prefix,
+    counterId,
+  });
+  return reservePartyCode({ companyId, prefix: activePrefix, counterId });
 }
 
 export function userId(user) {

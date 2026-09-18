@@ -1,20 +1,28 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import * as XLSX from "xlsx";
 import html2pdf from "html2pdf.js";
+import { getFiscalYear, getFiscalYearOptions } from "@/lib/fiscalYear";
 
 const fmtINR = (n) => new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(n || 0);
 
 export default function BudgetPage() {
   const [budgets, setBudgets] = useState([]);
   const [variance, setVariance] = useState(null);
-  const [fiscalYear, setFiscalYear] = useState(`${new Date().getFullYear() - 1}-${String(new Date().getFullYear()).slice(2)}`);
+  const [fiscalYear, setFiscalYear] = useState(() => getFiscalYear());
   const [accounts, setAccounts] = useState([]);
   const [selectedAccount, setSelectedAccount] = useState("");
+  const [accountSearch, setAccountSearch] = useState("");
   const [budgetAmount, setBudgetAmount] = useState("");
   const [budgetType, setBudgetType] = useState("Expense");
   const [loading, setLoading] = useState(false);
   const token = () => localStorage.getItem("token") || "";
+  const fiscalYearOptions = useMemo(() => getFiscalYearOptions(), []);
+  const visibleAccounts = useMemo(() => {
+    const query = accountSearch.trim().toLowerCase();
+    return accounts.filter((account) => !query || [account.name, account.code, account.type]
+      .filter(Boolean).some((value) => String(value).toLowerCase().includes(query)));
+  }, [accounts, accountSearch]);
 
   const fetchAccounts = async () => {
     const res = await fetch("/api/accounts/heads?isActive=true", { headers: { Authorization: `Bearer ${token()}` } });
@@ -71,7 +79,7 @@ export default function BudgetPage() {
           <h1 className="text-2xl font-bold">Budgeting & Variance Analysis</h1>
           <div className="flex gap-2">
             <select value={fiscalYear} onChange={e => setFiscalYear(e.target.value)} className="border rounded px-3 py-1">
-              {[2024,2025,2026].map(y => <option key={y} value={`${y}-${String(y+1).slice(2)}`}>{y}-{String(y+1).slice(2)}</option>)}
+              {fiscalYearOptions.map(({ value, label }) => <option key={value} value={value}>{label}</option>)}
             </select>
             <button onClick={exportExcel} className="bg-emerald-600 text-white px-3 py-1 rounded text-sm">Excel</button>
             <button onClick={exportPDF} className="bg-red-600 text-white px-3 py-1 rounded text-sm">PDF</button>
@@ -82,9 +90,17 @@ export default function BudgetPage() {
         <div className="bg-white rounded-xl p-4 mb-6 shadow-sm">
           <h2 className="font-semibold mb-3">Set/Update Budget</h2>
           <div className="flex gap-4 flex-wrap">
-            <select value={selectedAccount} onChange={e => setSelectedAccount(e.target.value)} className="border rounded p-2 flex-1">
+            <input
+              type="search"
+              value={accountSearch}
+              onChange={e => setAccountSearch(e.target.value)}
+              placeholder="Search account by name, code, or type"
+              className="border rounded p-2 min-w-[220px]"
+              aria-label="Search budget accounts"
+            />
+            <select value={selectedAccount} onChange={e => setSelectedAccount(e.target.value)} className="border rounded p-2 flex-1" aria-label="Select budget account">
               <option value="">Select Account</option>
-              {accounts.map(a => <option key={a._id} value={a._id}>{a.name} ({a.type})</option>)}
+              {visibleAccounts.map(a => <option key={a._id} value={a._id}>{a.name} {a.code ? `(${a.code})` : ""} — {a.type}</option>)}
             </select>
             <select value={budgetType} onChange={e => setBudgetType(e.target.value)} className="border rounded p-2">
               <option value="Income">Income</option>

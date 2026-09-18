@@ -1,7 +1,7 @@
 import mongoose from "mongoose";
 import { Readable } from "stream";
 import formidable from "formidable";
-import { v2 as cloudinary } from "cloudinary";
+import cloudinary from "@/lib/cloudinary";
 import dbConnect from "@/lib/db";
 import Delivery from "@/models/deliveryModels";
 import SalesOrder from "@/models/SalesOrder";

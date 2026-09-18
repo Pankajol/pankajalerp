@@ -2,27 +2,11 @@ import { NextResponse } from "next/server";
 import dbConnect from "@/lib/db.js";
 import Supplier from "@/models/SupplierModels";
 import { getTokenFromHeader, verifyJWT } from "@/lib/auth";
-import { v2 as cloudinary } from "cloudinary";
+import { storeAttachment } from "@/lib/fileStorage";
 
-// Cloudinary config (same as above)
-cloudinary.config({
-  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-  api_key: process.env.CLOUDINARY_API_KEY,
-  api_secret: process.env.CLOUDINARY_API_SECRET,
-});
-
-async function uploadToCloudinary(fileBuffer, originalName) {
-  return new Promise((resolve, reject) => {
-    const uploadStream = cloudinary.uploader.upload_stream(
-      {
-        folder: "suppliers",
-        resource_type: "auto",
-        public_id: `${Date.now()}_${originalName.replace(/\s/g, "_")}`,
-      },
-      (error, result) => (error ? reject(error) : resolve(result.secure_url))
-    );
-    uploadStream.end(fileBuffer);
-  });
+async function uploadToCloudinary(fileBuffer, originalName, companyId) {
+  const uploaded = await storeAttachment(Object.assign(fileBuffer, { name: originalName }), { companyId, folder: "suppliers" });
+  return uploaded.url;
 }
 
 async function parseMultipart(req) {
@@ -63,7 +47,8 @@ export async function GET(req, { params }) {
   if (error) return NextResponse.json({ success: false, message: error }, { status });
 
   try {
-    const supplier = await Supplier.findOne({ _id: params.id, companyId: user.companyId })
+    const { id } = await params;
+    const supplier = await Supplier.findOne({ _id: id, companyId: user.companyId })
       .populate("glAccount", "accountName accountCode");
     if (!supplier) {
       return NextResponse.json({ success: false, message: "Supplier not found" }, { status: 404 });
@@ -82,6 +67,7 @@ export async function PUT(req, { params }) {
   if (error) return NextResponse.json({ success: false, message: error }, { status });
 
   try {
+    const { id } = await params;
     let updateData = {};
     let uploadedUrls = [];
     const contentType = req.headers.get("content-type") || "";
@@ -91,7 +77,7 @@ export async function PUT(req, { params }) {
       updateData = data;
       for (const file of files) {
         const buffer = Buffer.from(await file.arrayBuffer());
-        const url = await uploadToCloudinary(buffer, file.name);
+        const url = await uploadToCloudinary(buffer, file.name, user.companyId);
         uploadedUrls.push(url);
       }
     } else {
@@ -99,7 +85,7 @@ export async function PUT(req, { params }) {
     }
 
     // Fetch existing supplier to get current attachments
-    const existingSupplier = await Supplier.findOne({ _id: params.id, companyId: user.companyId });
+    const existingSupplier = await Supplier.findOne({ _id: id, companyId: user.companyId });
     if (!existingSupplier) {
       return NextResponse.json({ success: false, message: "Supplier not found" }, { status: 404 });
     }
@@ -116,7 +102,7 @@ export async function PUT(req, { params }) {
     updateData.attachments = allUrls.join(",");
 
     const updated = await Supplier.findOneAndUpdate(
-      { _id: params.id, companyId: user.companyId },
+      { _id: id, companyId: user.companyId },
       updateData,
       { new: true, runValidators: true }
     ).populate("glAccount", "accountName accountCode");
@@ -135,7 +121,8 @@ export async function DELETE(req, { params }) {
   if (error) return NextResponse.json({ success: false, message: error }, { status });
 
   try {
-    const deleted = await Supplier.findOneAndDelete({ _id: params.id, companyId: user.companyId });
+    const { id } = await params;
+    const deleted = await Supplier.findOneAndDelete({ _id: id, companyId: user.companyId });
     if (!deleted) {
       return NextResponse.json({ success: false, message: "Supplier not found" }, { status: 404 });
     }

@@ -15,8 +15,8 @@ function Toast({ toasts }) {
   );
 }
 
-const INPUT_STYLE = { width:"100%",padding:"9px 12px",borderRadius:9,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.1)",color:"#e2e8f0",fontFamily:"'DM Mono',monospace",fontSize:13,outline:"none" };
-const SELECT_STYLE = { ...INPUT_STYLE, colorScheme:"dark" };
+const INPUT_STYLE = { width:"100%",padding:"9px 12px",borderRadius:9,background:"#ffffff",border:"1px solid #d1d5db",color:"#1f2937",fontFamily:"'DM Mono',monospace",fontSize:13,outline:"none" };
+const SELECT_STYLE = { ...INPUT_STYLE, colorScheme:"light" };
 
 export default function JournalEntryPage() {
   const token = ()=>typeof window!=="undefined"?localStorage.getItem("token")||"":"";
@@ -26,6 +26,7 @@ export default function JournalEntryPage() {
   const [saving, setSaving]     = useState(false);
   const [toasts, setToasts]     = useState([]);
   const [search, setSearch]     = useState("");
+  const [accountSearch, setAccountSearch] = useState("");
   const [tab, setTab]           = useState("list"); // "list" | "new"
   const toastId = useRef(0);
 
@@ -101,6 +102,13 @@ export default function JournalEntryPage() {
   };
 
   const filtered = useMemo(()=>entries.filter(e=>!search.trim()||e.transactionNumber?.toLowerCase().includes(search.toLowerCase())||e.narration?.toLowerCase().includes(search.toLowerCase())),[entries,search]);
+  const visibleAccounts = useMemo(() => {
+    const term = accountSearch.trim().toLowerCase();
+    if (!term) return accounts;
+    return accounts.filter((account) => [account.name, account.code, account.type, account.group]
+      .filter(Boolean)
+      .some((value) => String(value).toLowerCase().includes(term)));
+  }, [accountSearch, accounts]);
 
   return (
     <>
@@ -111,12 +119,13 @@ export default function JournalEntryPage() {
         @keyframes je-spin { to{transform:rotate(360deg)} }
         @keyframes je-shimmer { 0%{background-position:-400px 0} 100%{background-position:400px 0} }
         .je-page * { box-sizing:border-box; }
-        .je-page { min-height:100vh; background:#060b14; font-family:'Syne',sans-serif; color:#e2e8f0; padding:32px 20px 60px; }
+        .je-page { min-height:100vh; background:#f8fafc; font-family:'Syne',sans-serif; color:#1f2937; padding:32px 20px 60px; }
         .je-skeleton { background:linear-gradient(90deg,#1e293b 25%,#2d3f55 50%,#1e293b 75%); background-size:400px 100%; animation:je-shimmer 1.4s infinite; border-radius:8px; }
-        .je-row { border-bottom:1px solid rgba(255,255,255,0.04); transition:background 0.15s; }
-        .je-row:hover { background:rgba(255,255,255,0.025); }
-        .je-tab { padding:9px 20px; border-radius:10px; border:1px solid rgba(255,255,255,0.08); background:transparent; color:#64748b; font-family:'DM Mono',monospace; font-size:12px; cursor:pointer; transition:all 0.2s; }
-        .je-tab.active { background:rgba(99,102,241,0.12); border-color:#6366f155; color:#818cf8; }
+        .je-row { border-bottom:1px solid #e5e7eb; transition:background 0.15s; }
+        .je-row:hover { background:#f8fafc; }
+        .je-tab { padding:9px 20px; border-radius:10px; border:1px solid #d1d5db; background:#ffffff; color:#475569; font-family:'DM Mono',monospace; font-size:12px; cursor:pointer; transition:all 0.2s; }
+        .je-tab.active { background:#eef2ff; border-color:#a5b4fc; color:#4338ca; }
+        .je-page table tbody td:nth-child(3) { color:#1f2937 !important; }
         table { border-collapse:collapse; width:100%; }
       `}</style>
       <Toast toasts={toasts} />
@@ -128,13 +137,13 @@ export default function JournalEntryPage() {
           <div style={{ display:"flex",justifyContent:"space-between",alignItems:"flex-end",marginBottom:28,flexWrap:"wrap",gap:16,animation:"je-fadeUp 0.4s ease" }}>
             <div>
               <div style={{ fontFamily:"'DM Mono',monospace",fontSize:11,color:"#475569",textTransform:"uppercase",letterSpacing:2,marginBottom:4 }}>Accounts</div>
-              <h1 style={{ fontSize:32,fontWeight:800,color:"#f8fafc",margin:0 }}>Journal Entry</h1>
+              <h1 style={{ fontSize:32,fontWeight:800,color:"#111827",margin:0 }}>Journal Entry</h1>
               <p style={{ margin:"6px 0 0",fontFamily:"'DM Mono',monospace",fontSize:13,color:"#475569" }}>Manual double-entry bookkeeping</p>
             </div>
             <div style={{ display:"flex",gap:8 }}>
               <button className={`je-tab${tab==="list"?" active":""}`} onClick={()=>setTab("list")}>≡ All Entries</button>
               <button className={`je-tab${tab==="new"?" active":""}`} onClick={()=>setTab("new")}
-                style={{ background:tab==="new"?"linear-gradient(135deg,#1d4ed8,#3b82f6)":"transparent",color:tab==="new"?"#fff":"#64748b",border:tab==="new"?"none":"1px solid rgba(255,255,255,0.08)" }}>
+                style={{ background:tab==="new"?"linear-gradient(135deg,#1d4ed8,#3b82f6)":"#ffffff",color:tab==="new"?"#fff":"#475569",border:tab==="new"?"none":"1px solid #d1d5db" }}>
                 + New Entry
               </button>
             </div>
@@ -142,7 +151,7 @@ export default function JournalEntryPage() {
 
           {/* ── NEW ENTRY FORM ── */}
           {tab==="new" && (
-            <div style={{ background:"#0d1829",border:"1px solid rgba(255,255,255,0.07)",borderRadius:20,padding:"28px",marginBottom:20,animation:"je-fadeUp 0.4s ease" }}>
+            <div style={{ background:"#ffffff",border:"1px solid #e5e7eb",boxShadow:"0 1px 3px rgba(15,23,42,0.06)",borderRadius:20,padding:"28px",marginBottom:20,animation:"je-fadeUp 0.4s ease" }}>
               <form onSubmit={handleSubmit}>
                 {/* Date + Narration */}
                 <div style={{ display:"grid",gridTemplateColumns:"200px 1fr",gap:14,marginBottom:20 }}>
@@ -157,17 +166,21 @@ export default function JournalEntryPage() {
                 </div>
 
                 {/* Lines table */}
-                <div style={{ background:"rgba(255,255,255,0.02)",borderRadius:12,overflow:"hidden",border:"1px solid rgba(255,255,255,0.06)",marginBottom:16 }}>
-                  <div style={{ display:"grid",gridTemplateColumns:"2fr 100px 140px 1fr 36px",gap:0,padding:"9px 14px",borderBottom:"1px solid rgba(255,255,255,0.06)" }}>
+                <div style={{ marginBottom:10,maxWidth:360 }}>
+                  <label style={{ fontFamily:"'DM Mono',monospace",fontSize:10,color:"#475569",textTransform:"uppercase",letterSpacing:1.5,display:"block",marginBottom:7 }}>Filter account choices</label>
+                  <input value={accountSearch} onChange={e=>setAccountSearch(e.target.value)} placeholder="Search by account name, code, type or group" style={INPUT_STYLE} />
+                </div>
+                <div style={{ background:"#f8fafc",borderRadius:12,overflow:"hidden",border:"1px solid #e5e7eb",marginBottom:16 }}>
+                  <div style={{ display:"grid",gridTemplateColumns:"2fr 100px 140px 1fr 36px",gap:0,padding:"9px 14px",borderBottom:"1px solid #e5e7eb" }}>
                     {["Account","Dr/Cr","Amount","Description",""].map(h=>(
                       <div key={h} style={{ fontFamily:"'DM Mono',monospace",fontSize:10,color:"#334155",textTransform:"uppercase",letterSpacing:1.5 }}>{h}</div>
                     ))}
                   </div>
                   {form.lines.map((line,i)=>(
-                    <div key={i} style={{ display:"grid",gridTemplateColumns:"2fr 100px 140px 1fr 36px",gap:8,padding:"10px 14px",borderBottom:"1px solid rgba(255,255,255,0.04)",alignItems:"center" }}>
+                    <div key={i} style={{ display:"grid",gridTemplateColumns:"2fr 100px 140px 1fr 36px",gap:8,padding:"10px 14px",borderBottom:"1px solid #e5e7eb",alignItems:"center" }}>
                       <select required value={line.accountId} onChange={e=>updateLine(i,"accountId",e.target.value)} style={SELECT_STYLE}>
                         <option value="">-- Select Account --</option>
-                        {accounts.map(a=><option key={a._id} value={a._id}>{a.name}</option>)}
+                        {visibleAccounts.map(a=><option key={a._id} value={a._id}>{a.name}{a.code ? ` (${a.code})` : ""}</option>)}
                       </select>
                       <select value={line.type} onChange={e=>updateLine(i,"type",e.target.value)} style={{ ...SELECT_STYLE,color:line.type==="Debit"?"#38bdf8":"#a78bfa" }}>
                         <option value="Debit">Debit</option>
@@ -184,7 +197,7 @@ export default function JournalEntryPage() {
                 {/* Add line + totals */}
                 <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20,flexWrap:"wrap",gap:10 }}>
                   <button type="button" onClick={addLine}
-                    style={{ padding:"8px 16px",borderRadius:9,border:"1px solid rgba(255,255,255,0.1)",background:"transparent",color:"#64748b",fontFamily:"'DM Mono',monospace",fontSize:12,cursor:"pointer" }}>
+                    style={{ padding:"8px 16px",borderRadius:9,border:"1px solid #d1d5db",background:"#ffffff",color:"#475569",fontFamily:"'DM Mono',monospace",fontSize:12,cursor:"pointer" }}>
                     + Add Line
                   </button>
                   <div style={{ display:"flex",gap:20,alignItems:"center" }}>
@@ -204,9 +217,9 @@ export default function JournalEntryPage() {
                 </div>
 
                 <div style={{ display:"flex",gap:10,justifyContent:"flex-end" }}>
-                  <button type="button" onClick={()=>setTab("list")} style={{ padding:"11px 20px",borderRadius:10,border:"1px solid rgba(255,255,255,0.1)",background:"transparent",color:"#64748b",fontFamily:"'Syne',sans-serif",fontWeight:700,fontSize:14,cursor:"pointer" }}>Cancel</button>
+                  <button type="button" onClick={()=>setTab("list")} style={{ padding:"11px 20px",borderRadius:10,border:"1px solid #d1d5db",background:"#ffffff",color:"#475569",fontFamily:"'Syne',sans-serif",fontWeight:700,fontSize:14,cursor:"pointer" }}>Cancel</button>
                   <button type="submit" disabled={saving||!isBalanced}
-                    style={{ padding:"11px 28px",borderRadius:10,border:"none",background:isBalanced?"linear-gradient(135deg,#1d4ed8,#3b82f6)":"rgba(255,255,255,0.05)",color:isBalanced?"#fff":"#334155",fontFamily:"'Syne',sans-serif",fontWeight:700,fontSize:14,cursor:saving||!isBalanced?"not-allowed":"pointer",display:"flex",alignItems:"center",gap:8 }}>
+                    style={{ padding:"11px 28px",borderRadius:10,border:"none",background:isBalanced?"linear-gradient(135deg,#1d4ed8,#3b82f6)":"#e5e7eb",color:isBalanced?"#fff":"#94a3b8",fontFamily:"'Syne',sans-serif",fontWeight:700,fontSize:14,cursor:saving||!isBalanced?"not-allowed":"pointer",display:"flex",alignItems:"center",gap:8 }}>
                     {saving?<span style={{ width:16,height:16,border:"2px solid rgba(255,255,255,0.3)",borderTopColor:"#fff",borderRadius:"50%",display:"inline-block",animation:"je-spin 0.7s linear infinite" }} />:"✦ Post Entry"}
                   </button>
                 </div>
@@ -216,16 +229,16 @@ export default function JournalEntryPage() {
 
           {/* ── ENTRIES LIST ── */}
           {tab==="list" && (
-            <div style={{ background:"#0d1829",border:"1px solid rgba(255,255,255,0.07)",borderRadius:20,overflow:"hidden",animation:"je-fadeUp 0.4s ease 0.05s both" }}>
-              <div style={{ padding:"18px 20px 14px",borderBottom:"1px solid rgba(255,255,255,0.06)",display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap" }}>
+            <div style={{ background:"#ffffff",border:"1px solid #e5e7eb",boxShadow:"0 1px 3px rgba(15,23,42,0.06)",borderRadius:20,overflow:"hidden",animation:"je-fadeUp 0.4s ease 0.05s both" }}>
+              <div style={{ padding:"18px 20px 14px",borderBottom:"1px solid #e5e7eb",display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap" }}>
                 <div>
-                  <h2 style={{ fontFamily:"'Syne',sans-serif",fontWeight:700,fontSize:17,color:"#f1f5f9",margin:0 }}>Journal Entries</h2>
+                  <h2 style={{ fontFamily:"'Syne',sans-serif",fontWeight:700,fontSize:17,color:"#111827",margin:0 }}>Journal Entries</h2>
                   <div style={{ fontFamily:"'DM Mono',monospace",fontSize:11,color:"#475569",marginTop:3 }}>{filtered.length} entries</div>
                 </div>
                 <div style={{ position:"relative" }}>
                   <span style={{ position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",color:"#475569",fontSize:13 }}>⌕</span>
                   <input placeholder="Search entries..." value={search} onChange={e=>setSearch(e.target.value)}
-                    style={{ paddingLeft:28,paddingRight:12,paddingTop:7,paddingBottom:7,borderRadius:8,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",color:"#e2e8f0",fontFamily:"'DM Mono',monospace",fontSize:12,outline:"none",width:200 }} />
+                    style={{ paddingLeft:28,paddingRight:12,paddingTop:7,paddingBottom:7,borderRadius:8,background:"#ffffff",border:"1px solid #d1d5db",color:"#1f2937",fontFamily:"'DM Mono',monospace",fontSize:12,outline:"none",width:200 }} />
                 </div>
               </div>
 
@@ -243,7 +256,7 @@ export default function JournalEntryPage() {
                 <div style={{overflowX:"auto"}}>
                   <table>
                     <thead>
-                      <tr style={{borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
+                      <tr style={{borderBottom:"1px solid #e5e7eb",background:"#f8fafc"}}>
                         {["Ref No","Date","Narration","Debit","Credit","Lines","Status"].map(h=>(
                           <th key={h} style={{padding:"11px 16px",textAlign:["Debit","Credit"].includes(h)?"right":"left",fontFamily:"'DM Mono',monospace",fontSize:10,color:"#334155",textTransform:"uppercase",letterSpacing:1.5,fontWeight:500}}>{h}</th>
                         ))}

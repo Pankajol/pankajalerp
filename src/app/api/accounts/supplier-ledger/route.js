@@ -16,7 +16,7 @@ export async function GET(req) {
   const supplierId = searchParams.get("supplierId");
 
   // ✅ 1. supplier find
-  const supplier = await Supplier.findById(supplierId);
+  const supplier = await Supplier.findOne({ _id: supplierId, companyId: user.companyId });
   if (!supplier || !supplier.glAccount) {
     return NextResponse.json({
       success: false,
@@ -31,9 +31,10 @@ export async function GET(req) {
   }).sort({ date: 1 });
 
   // ✅ 3. running balance
-  let balance = 0;
+  let balance = Number(supplier.glAccount?.openingBalance || 0);
   const data = entries.map(e => {
-    balance += (e.debit || 0) - (e.credit || 0);
+    // Supplier accounts are credit-normal: credits increase the amount owed.
+    balance += (e.credit || 0) - (e.debit || 0);
     return {
       date: e.date,
       narration: e.narration,

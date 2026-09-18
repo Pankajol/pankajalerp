@@ -5,7 +5,7 @@ import mongoose from "mongoose";
 import dbConnect from "@/lib/db";
 import PurchaseQuotation from "@/models/PurchaseQuotationModel";
 import { getTokenFromHeader, verifyJWT } from "@/lib/auth";
-import { v2 as cloudinary } from "cloudinary";
+import cloudinary from "@/lib/cloudinary";
 
 // ✅ Cloudinary Config
 cloudinary.config({

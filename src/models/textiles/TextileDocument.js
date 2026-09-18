@@ -19,6 +19,12 @@ const TextileDocumentSchema = new mongoose.Schema(
     ],
     createdBy: { type: String },
     updatedBy: { type: String },
+    canonicalReference: {
+      model: { type: String },
+      recordId: { type: mongoose.Schema.Types.ObjectId },
+      linkedAt: { type: Date },
+      linkedBy: { type: String },
+    },
   },
   { timestamps: true, minimize: false }
 );
@@ -27,4 +33,3 @@ TextileDocumentSchema.index({ companyId: 1, doctype: 1, documentNumber: 1 }, { u
 
 export default mongoose.models.TextileDocument ||
   mongoose.model("TextileDocument", TextileDocumentSchema);
-

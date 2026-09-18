@@ -89,6 +89,7 @@ export async function POST(req, { params }) {
   const { slug } = await params;
   const config = getTextileDoctype(slug);
   if (!config) return NextResponse.json({ success: false, message: "Unknown textile DocType" }, { status: 404 });
+  if (config.canonicalRoute) return NextResponse.json({ success: false, message: `Import this data in ${config.canonicalLabel}; DocType Center does not create duplicate records.`, canonicalRoute: config.canonicalRoute }, { status: 409 });
   const body = await req.json();
   const rows = Array.isArray(body.rows) ? body.rows : [];
   if (!rows.length) return NextResponse.json({ success: false, message: "Excel file has no records" }, { status: 400 });

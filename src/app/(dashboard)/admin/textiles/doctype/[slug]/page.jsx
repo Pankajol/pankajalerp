@@ -29,6 +29,7 @@ export default function TextileDocTypeListPage() {
   useEffect(() => { if (config) load(); }, [slug]);
 
   if (!config) return <div className="p-8">Unknown textile DocType.</div>;
+  if (config.canonicalRoute) return <div className="min-h-screen bg-slate-50 p-4 md:p-8"><div className="mx-auto max-w-2xl rounded-2xl border border-indigo-100 bg-white p-7 shadow-sm"><p className="text-xs font-bold uppercase tracking-wider text-indigo-600">Canonical textile module</p><h1 className="mt-2 text-2xl font-bold text-slate-900">{config.label}</h1><p className="mt-3 text-sm leading-6 text-slate-600">This record is managed in <strong>{config.canonicalLabel}</strong>. Creating it again in DocType Center would create duplicate production data, so this page is read-only by design.</p><Link href={config.canonicalRoute} className="mt-5 inline-flex rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-bold text-white">Open {config.canonicalLabel}</Link></div></div>;
   const isMaster = config.category === "Masters";
   const remove = async (record) => {
     if (!confirm(`Delete ${record.documentNumber}?`)) return;

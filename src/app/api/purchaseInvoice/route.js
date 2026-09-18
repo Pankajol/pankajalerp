@@ -1,19 +1,54 @@
 import { NextResponse } from "next/server";
 import mongoose, { Types } from "mongoose";
-import { v2 as cloudinary } from "cloudinary";
+import cloudinary from "@/lib/cloudinary";
 import formidable from "formidable";
 import { Readable } from "stream";
 import dbConnect from "@/lib/db";
 import GRN from "@/models/grnModels";
 import PurchaseInvoice from "@/models/InvoiceModel";
 import PurchaseOrder from "@/models/PurchaseOrder";
+import Item from "@/models/ItemModels"; // registers the "Item" model used by items.item populate
 import Inventory from "@/models/Inventory";
 import StockMovement from "@/models/StockMovement";
+import Payment from "@/models/Payment";
 import { getTokenFromHeader, verifyJWT } from "@/lib/auth";
 import Counter from "@/models/Counter";
-import { autoPurchaseInvoice, autoPaymentEntry } from "@/lib/autoTransaction";
+import AccountHead from "@/models/accounts/AccountHead";
+import { autoPurchaseInvoice, autoPaymentEntry, reversePostedTransactions } from "@/lib/autoTransaction";
 
 export const dynamic = "force-dynamic";
+
+async function getPaymentAccountName(companyId, method, bankAccountId) {
+  if (method === "cash") return "Cash in Hand";
+  if (["upi", "card", "netbanking", "wallet"].includes(method)) return "Digital Payments";
+  if (bankAccountId && Types.ObjectId.isValid(bankAccountId)) {
+    const account = await AccountHead.findOne({ _id: bankAccountId, companyId, isActive: true }).select("name");
+    if (account) return account.name;
+  }
+  return "Bank Account";
+}
+
+async function postPurchaseAccounting({ invoice, companyId, createdBy, session }) {
+  await autoPurchaseInvoice({
+    companyId, amount: invoice.grandTotal, taxAmount: invoice.gstTotal, fromGRN: Boolean(invoice.grn), partyId: invoice.supplier,
+    partyName: invoice.supplierName || "Supplier", referenceId: invoice._id,
+    referenceNumber: invoice.documentNumberPurchaseInvoice,
+    narration: `Purchase Invoice ${invoice.documentNumberPurchaseInvoice}`,
+    date: invoice.postingDate, createdBy, session,
+  });
+  for (const payment of invoice.payments || []) {
+    if (!(Number(payment.amount) > 0)) continue;
+    const bankAccountName = await getPaymentAccountName(companyId, payment.method, payment.bankAccountId);
+    await autoPaymentEntry({
+      companyId, amount: payment.amount, partyId: invoice.supplier,
+      partyName: invoice.supplierName || "Supplier", referenceId: payment.paymentId,
+      referenceNumber: invoice.documentNumberPurchaseInvoice, bankAccountName,
+      bankAccountId: payment.bankAccountId || undefined, paymentMode: payment.method,
+      narration: `Payment against ${invoice.documentNumberPurchaseInvoice}`,
+      date: payment.paymentDate || invoice.postingDate, createdBy, session,
+    });
+  }
+}
 
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
@@ -198,6 +233,36 @@ async function processInvoiceItem(item, invoiceId, decoded, session, linkedToPO 
 // --------------------------------------------------------------
 // POST – Create Purchase Invoice
 // --------------------------------------------------------------
+// Reverses the physical receipt for a direct or PO-backed purchase invoice.
+// A GRN-backed invoice has no stock movement of its own.
+async function reverseInvoiceItem(item, invoiceId, decoded, session, linkedToPO = false) {
+  const qty = Number(item.quantity);
+  const itemId = item.item?._id || item.item;
+  const warehouseId = item.warehouse?._id || item.warehouse;
+  const variantId = item.variant?.variantId || item.selectedVariantId;
+  if (!itemId || !warehouseId || qty <= 0) throw new Error(`Invalid item data for ${item.itemCode || "unknown item"}`);
+  const inventory = await Inventory.findOne({ item: new Types.ObjectId(itemId), warehouse: new Types.ObjectId(warehouseId), companyId: decoded.companyId }).session(session);
+  if (!inventory) throw new Error(`Cannot cancel: stock record for ${item.itemCode || itemId} was not found`);
+  if (variantId) {
+    const variant = inventory.variantInventory.find((entry) => String(entry.variantId) === String(variantId));
+    if (!variant || Number(variant.quantity || 0) < qty) throw new Error(`Cannot cancel: insufficient available stock for ${item.itemCode || itemId}`);
+    variant.quantity -= qty;
+    if (linkedToPO) variant.onOrder = Number(variant.onOrder || 0) + qty;
+  } else {
+    if (Number(inventory.quantity || 0) < qty) throw new Error(`Cannot cancel: insufficient available stock for ${item.itemCode || itemId}`);
+    inventory.quantity -= qty;
+    if (linkedToPO) inventory.onOrder = Number(inventory.onOrder || 0) + qty;
+  }
+  await inventory.save({ session });
+  await StockMovement.create([{
+    companyId: decoded.companyId, createdBy: decoded.userId || decoded.id,
+    item: new Types.ObjectId(itemId), variantId: variantId ? new Types.ObjectId(variantId) : null,
+    warehouse: new Types.ObjectId(warehouseId), movementType: "OUT", quantity: qty,
+    reference: invoiceId, referenceType: "PurchaseInvoice",
+    remarks: "Stock reversal for cancelled Purchase Invoice",
+  }], { session });
+}
+
 export async function POST(req) {
   await dbConnect();
 
@@ -234,12 +299,29 @@ export async function POST(req) {
     draft: "draft",
     submitted: "submitted",
     pending: "pending",
-    approved: "pending",
+    approved: "posted",
     rejected: "rejected",
     posted: "posted",
     cancelled: "cancelled",
   };
   invoiceData.status = statusMapping[invoiceData.status?.toLowerCase()] || "draft";
+
+  // Form controls submit empty strings for optional relations. Mongoose cannot
+  // cast "" to ObjectId, and a blank invoiceType is not a valid enum value.
+  // Normalize these once, before the document is created or stock is touched.
+  for (const field of ["purchaseOrder", "grn", "sourceId"]) {
+    if (invoiceData[field] === "" || invoiceData[field] === undefined) {
+      invoiceData[field] = null;
+    }
+  }
+  const validInvoiceTypes = ["Normal", "POCopy", "GRNCopy"];
+  if (!validInvoiceTypes.includes(invoiceData.invoiceType)) {
+    invoiceData.invoiceType = invoiceData.purchaseOrder
+      ? "POCopy"
+      : invoiceData.grn
+        ? "GRNCopy"
+        : "Normal";
+  }
 
   // Clean payments
   if (invoiceData.payments && Array.isArray(invoiceData.payments)) {
@@ -253,8 +335,24 @@ export async function POST(req) {
     invoiceData.payments = [];
   }
 
-  const grandTotal = Number(invoiceData.grandTotal) || 0;
-  let totalPaid = invoiceData.payments.reduce((sum, p) => sum + (p.amount || 0), 0);
+  const grandTotal = Math.round((Number(invoiceData.grandTotal) || 0) * 100) / 100;
+  const totalPaid = Math.round(invoiceData.payments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0) * 100) / 100;
+  if (totalPaid - grandTotal > 0.009) {
+    return NextResponse.json({ success: false, error: "Total payment cannot exceed the invoice total" }, { status: 400 });
+  }
+  const bankPaymentIds = invoiceData.payments
+    .filter((payment) => ["bank", "cheque"].includes(payment.method))
+    .map((payment) => payment.bankAccountId)
+    .filter(Boolean);
+  if (bankPaymentIds.length !== invoiceData.payments.filter((payment) => ["bank", "cheque"].includes(payment.method)).length) {
+    return NextResponse.json({ success: false, error: "Select a bank account for every bank or cheque payment" }, { status: 400 });
+  }
+  if (bankPaymentIds.length) {
+    const accounts = await AccountHead.countDocuments({ _id: { $in: bankPaymentIds }, companyId: decoded.companyId, type: "Asset", isActive: true });
+    if (accounts !== new Set(bankPaymentIds.map(String)).size) {
+      return NextResponse.json({ success: false, error: "One or more selected payment accounts are unavailable" }, { status: 400 });
+    }
+  }
   invoiceData.paidAmount = totalPaid;
   invoiceData.remainingAmount = Math.max(grandTotal - totalPaid, 0);
   invoiceData.paymentStatus = totalPaid === 0 ? "Pending" : totalPaid >= grandTotal ? "Paid" : "Partial";
@@ -348,6 +446,18 @@ export async function POST(req) {
         }
       }
 
+      // Invoice, stock, supplier ledger and payment journals are one atomic
+      // operation. If any selected account/payment cannot post, this session
+      // rolls everything back and no half-saved invoice remains.
+      if (invoiceData.status === "posted") {
+        await postPurchaseAccounting({
+          invoice,
+          companyId: decoded.companyId,
+          createdBy: decoded.id || decoded.userId,
+          session,
+        });
+      }
+
       await session.commitTransaction();
       session.endSession();
       break; // success
@@ -358,44 +468,6 @@ export async function POST(req) {
       console.error(`Transaction attempt ${attempt} failed:`, error);
       if (attempt === maxAttempts) throw error;
       await new Promise((resolve) => setTimeout(resolve, attempt * 100));
-    }
-  }
-
-  // Accounting entries (outside transaction)
-  try {
-    await autoPurchaseInvoice({
-      companyId: decoded.companyId,
-      amount: grandTotal,
-      partyId: invoiceData.supplier,
-      partyName: invoiceData.supplierName,
-      referenceId: invoice._id,
-      referenceNumber: invoice.documentNumberPurchaseInvoice,
-      narration: `Purchase Invoice ${invoice.documentNumberPurchaseInvoice}`,
-      date: invoiceData.postingDate || new Date(),
-      createdBy: decoded.id || decoded.userId,
-    });
-  } catch (err) {
-    console.error("Accounting entry failed:", err.message);
-  }
-
-  for (const pmt of invoiceData.payments) {
-    try {
-      if (typeof autoPaymentEntry === "function") {
-        await autoPaymentEntry({
-          companyId: decoded.companyId,
-          amount: pmt.amount,
-          partyId: invoiceData.supplier,
-          referenceId: invoice._id,
-          referenceNumber: invoice.documentNumberPurchaseInvoice,
-          paymentMethod: pmt.method,
-          bankAccountId: pmt.bankAccountId,
-          narration: `Payment against ${invoice.documentNumberPurchaseInvoice}`,
-          date: pmt.paymentDate || invoiceData.postingDate,
-          createdBy: decoded.id || decoded.userId,
-        });
-      }
-    } catch (err) {
-      console.error("Payment entry failed:", err.message);
     }
   }
 
@@ -503,14 +575,46 @@ export async function PUT(req) {
     await deleteFilesByPublicIds(removedFilesPublicIds);
     delete invoiceData._id;
 
+    const statusMapping = {
+      draft: "draft", submitted: "submitted", pending: "pending", approved: "posted",
+      rejected: "rejected", posted: "posted", cancelled: "cancelled",
+    };
+    const nextStatus = invoiceData.status
+      ? (statusMapping[String(invoiceData.status).toLowerCase()] || existing.status)
+      : existing.status;
+
+    if (nextStatus === "cancelled") {
+      throw new Error("Use the cancel action so stock and accounting are reversed together");
+    }
+
+    // A posted document is immutable financially. Attachments and remarks may
+    // still be corrected, while payments must go through the payment endpoint
+    // so every payment has its own source id and journal.
+    if (existing.status === "posted" && invoiceData.payments !== undefined) {
+      const samePayments = JSON.stringify(existing.payments || []) === JSON.stringify(invoiceData.payments || []);
+      if (!samePayments) throw new Error("Use the payment entry flow to change payments on a posted invoice");
+    }
+
     // Update only allowed fields
     const updatePayload = {
-      status: invoiceData.status,
+      status: nextStatus,
       remarks: invoiceData.remarks,
       attachments: invoiceData.attachments,
       updatedAt: new Date(),
     };
     const updated = await PurchaseInvoice.findByIdAndUpdate(id, updatePayload, { new: true, session });
+
+    // A draft becomes an accounting document only when it is posted. Invoice,
+    // embedded payments, and their journals are committed or rolled back
+    // together; no posted invoice can be left without a payable entry.
+    if (existing.status !== "posted" && updated.status === "posted") {
+      await postPurchaseAccounting({
+        invoice: updated,
+        companyId: decoded.companyId,
+        createdBy: decoded.id || decoded.userId,
+        session,
+      });
+    }
 
     await session.commitTransaction();
     session.endSession();
@@ -528,6 +632,7 @@ export async function PUT(req) {
 // DELETE – Delete invoice (without reversing stock)
 // --------------------------------------------------------------
 export async function DELETE(req) {
+  let session;
   try {
     await dbConnect();
     const token = getTokenFromHeader(req);
@@ -541,8 +646,68 @@ export async function DELETE(req) {
       return NextResponse.json({ success: false, error: "Valid ID required" }, { status: 400 });
     }
 
-    const invoice = await PurchaseInvoice.findOne({ _id: id, companyId: decoded.companyId });
+    session = await mongoose.startSession();
+    session.startTransaction();
+    const invoice = await PurchaseInvoice.findOne({ _id: id, companyId: decoded.companyId }).session(session);
     if (!invoice) return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
+    if (invoice.status === "cancelled") return NextResponse.json({ success: false, error: "Invoice is already cancelled" }, { status: 409 });
+
+    if (!invoice.grn) {
+      for (const item of invoice.items || []) {
+        await reverseInvoiceItem(item, invoice._id, decoded, session, Boolean(invoice.purchaseOrder));
+      }
+    } else {
+      const grn = await GRN.findById(invoice.grn).session(session);
+      if (grn) {
+        grn.status = "Open";
+        grn.invoiceId = null;
+        await grn.save({ session });
+      }
+    }
+
+    if (invoice.purchaseOrder) {
+      const po = await PurchaseOrder.findById(invoice.purchaseOrder).session(session);
+      if (po) {
+        for (const invoiceItem of invoice.items || []) {
+          const poItem = po.items.find((item) => String(item.item) === String(invoiceItem.item?._id || invoiceItem.item));
+          if (poItem) {
+            poItem.receivedQuantity = Math.max(Number(poItem.receivedQuantity || 0) - Number(invoiceItem.quantity || 0), 0);
+            poItem.quantity = Math.max(Number(poItem.orderedQuantity || 0) - poItem.receivedQuantity, 0);
+          }
+        }
+        const received = po.items.reduce((sum, item) => sum + Number(item.receivedQuantity || 0), 0);
+        po.orderStatus = received === 0 ? "Open" : "PartiallyReceived";
+        await po.save({ session });
+      }
+    }
+
+    const relatedPayments = await Payment.find({
+      companyId: decoded.companyId,
+      "appliedInvoices.invoiceId": invoice._id,
+      status: { $ne: "Cancelled" },
+    }).session(session);
+    if (relatedPayments.some((payment) => payment.appliedInvoices.length !== 1)) {
+      throw new Error("Cancel or reallocate a payment shared with another invoice before cancelling this invoice");
+    }
+
+    await reversePostedTransactions({
+      companyId: decoded.companyId,
+      referenceIds: [
+        invoice._id,
+        ...(invoice.payments || []).map((payment) => payment.paymentId),
+        ...relatedPayments.map((payment) => payment._id),
+      ],
+      createdBy: decoded.id || decoded.userId,
+      date: new Date(),
+      narration: `Cancellation of purchase invoice ${invoice.documentNumberPurchaseInvoice}`,
+      session,
+    });
+    if (relatedPayments.length) {
+      await Payment.updateMany({ _id: { $in: relatedPayments.map((payment) => payment._id) } }, { $set: { status: "Cancelled" } }, { session });
+    }
+    invoice.status = "cancelled";
+    await invoice.save({ session });
+    await session.commitTransaction();
 
     // Delete Cloudinary attachments
     if (invoice.attachments?.length) {
@@ -550,11 +715,13 @@ export async function DELETE(req) {
       await deleteFilesByPublicIds(publicIds);
     }
 
-    await PurchaseInvoice.deleteOne({ _id: id, companyId: decoded.companyId });
-    return NextResponse.json({ success: true, message: "Invoice deleted" });
+    return NextResponse.json({ success: true, message: "Invoice cancelled; stock and accounting were reversed" });
   } catch (error) {
+    if (session?.inTransaction()) await session.abortTransaction();
     console.error("DELETE /api/purchaseInvoice error:", error);
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+  } finally {
+    if (session) await session.endSession();
   }
 }
 

@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import html2pdf from "html2pdf.js";
+import { getFiscalYear, getFiscalYearOptions } from "@/lib/fiscalYear";
 
 // ─────────────────────────────────────────────────────────────
 // Utility Functions
@@ -63,8 +64,9 @@ const TreeNode = ({ node, level = 0, onToggle, expandedNodes, hideZero, searchTe
   const hasChildren = node.children && node.children.length > 0;
   const isExpanded = expandedNodes[node._id];
   const paddingLeft = level * 24;
-  const matchesSearch =
-    searchTerm && (node.name || "").toLowerCase().includes(searchTerm.toLowerCase());
+  const matchesSearch = searchTerm && [node.name, node.code]
+    .filter(Boolean)
+    .some((value) => String(value).toLowerCase().includes(searchTerm.toLowerCase()));
 
   if (
     hideZero &&
@@ -76,15 +78,15 @@ const TreeNode = ({ node, level = 0, onToggle, expandedNodes, hideZero, searchTe
   }
 
   return (
-    <div>
-      <div
-        className={`flex justify-between items-center py-2.5 px-4 hover:bg-gray-50 border-b border-gray-100 transition-colors ${
+    <>
+      <tr
+        className={`border-b border-gray-100 transition-colors hover:bg-gray-50 ${
           hasChildren ? "cursor-pointer" : ""
         } ${matchesSearch ? "bg-yellow-50/60" : ""}`}
-        style={{ paddingLeft: `${paddingLeft + 16}px` }}
         onClick={() => hasChildren && onToggle(node._id)}
       >
-        <div className="flex items-center gap-2 flex-1 min-w-0">
+        <td className="px-4 py-2.5" style={{ paddingLeft: `${paddingLeft + 16}px` }}>
+          <div className="flex items-center gap-2 min-w-0">
           {hasChildren && (
             <span className="text-gray-400 text-sm shrink-0">
               {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
@@ -96,26 +98,21 @@ const TreeNode = ({ node, level = 0, onToggle, expandedNodes, hideZero, searchTe
               ({node.code})
             </span>
           )}
-        </div>
-        <div className="flex items-center gap-4 shrink-0">
-          <span className="font-mono text-sm text-blue-600 w-28 text-right">
-            {fmtINR(node.totalDebit)}
-          </span>
-          <span className="font-mono text-sm text-purple-600 w-28 text-right">
-            {fmtINR(node.totalCredit)}
-          </span>
-          <span
-            className={`font-mono font-semibold text-sm w-32 text-right ${
-              node.closingBalance >= 0 ? "text-emerald-700" : "text-rose-600"
-            }`}
-          >
-            {fmtINR(Math.abs(node.closingBalance || 0))}
-          </span>
-        </div>
-      </div>
-      {hasChildren && isExpanded && (
-        <div className="ml-4">
-          {node.children.map((child) => (
+          </div>
+        </td>
+        <td className="px-4 py-2.5 font-mono text-sm text-right text-blue-600">
+          {fmtINR(node.totalDebit)}
+        </td>
+        <td className="px-4 py-2.5 font-mono text-sm text-right text-purple-600">
+          {fmtINR(node.totalCredit)}
+        </td>
+        <td className={`px-4 py-2.5 font-mono font-semibold text-sm text-right ${
+          node.closingBalance >= 0 ? "text-emerald-700" : "text-rose-600"
+        }`}>
+          {fmtINR(Math.abs(node.closingBalance || 0))}
+        </td>
+      </tr>
+      {hasChildren && isExpanded && node.children.map((child) => (
             <TreeNode
               key={child._id}
               node={child}
@@ -126,9 +123,7 @@ const TreeNode = ({ node, level = 0, onToggle, expandedNodes, hideZero, searchTe
               searchTerm={searchTerm}
             />
           ))}
-        </div>
-      )}
-    </div>
+    </>
   );
 };
 
@@ -178,7 +173,9 @@ const TrialSection = ({
     if (!term) return nodes;
     const lower = term.toLowerCase();
     const filterNode = (node) => {
-      const matches = (node.name || "").toLowerCase().includes(lower);
+      const matches = [node.name, node.code]
+        .filter(Boolean)
+        .some((value) => String(value).toLowerCase().includes(lower));
       const filteredChildren = node.children.map(filterNode).filter(Boolean);
       if (matches || filteredChildren.length) {
         return { ...node, children: filteredChildren };
@@ -290,7 +287,7 @@ const TrialSection = ({
                 <th className="px-4 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider w-32">
                   Balance
                 </th>
-              </tr>``
+              </tr>
             </thead>
             <tbody>
               {filteredTree.length === 0 ? (
@@ -364,9 +361,7 @@ export default function TrialBalancePage() {
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [fiscalYear, setFiscalYear] = useState(
-    `${new Date().getFullYear() - 1}-${String(new Date().getFullYear()).slice(2)}`
-  );
+  const [fiscalYear, setFiscalYear] = useState(() => getFiscalYear());
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
   const [hideZero, setHideZero] = useState(false);
@@ -489,17 +484,7 @@ export default function TrialBalancePage() {
     return groups;
   }, [rawData]);
 
-  const fiscalYearOptions = useMemo(() => {
-    const currentYear = new Date().getFullYear();
-    const options = [];
-    for (let y = currentYear - 3; y <= currentYear + 3; y++) {
-      options.push({
-        value: `${y}-${String(y + 1).slice(2)}`,
-        label: `${y}–${String(y + 1).slice(2)}`,
-      });
-    }
-    return options;
-  }, []);
+  const fiscalYearOptions = useMemo(() => getFiscalYearOptions(), []);
 
   const hasActiveFilters = !!(fromDate || toDate || hideZero || searchTerm);
   const isBalanced = totals.isBalanced && totals.totalDebit === totals.totalCredit;
@@ -554,7 +539,7 @@ export default function TrialBalancePage() {
             <div className="flex flex-wrap gap-4 items-end">
               <div className="w-40">
                 <label className="block text-xs font-medium text-gray-500 mb-1">
-                  Fiscal Year
+                  Financial Year
                 </label>
                 <select
                   value={fiscalYear}

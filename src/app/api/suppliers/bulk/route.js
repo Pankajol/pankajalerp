@@ -3,6 +3,7 @@ import dbConnect from "@/lib/db";
 import Supplier from "@/models/SupplierModels";
 import AccountHead from "@/models/accounts/AccountHead";
 import { getTokenFromHeader, verifyJWT } from "@/lib/auth";
+import { initialisePartyCodeSeries, reservePartyCode, normaliseManualPartyCode, isValidManualPartyCode, registerManualPartyCode } from "@/lib/partyCodeSeries";
 
 export async function POST(req) {
   await dbConnect();
@@ -37,15 +38,17 @@ export async function POST(req) {
     let createdCount = 0;
     let updatedCount = 0;
     let skippedCount = 0;
+    const batchCodes = new Set();
+
+    await initialisePartyCodeSeries({
+      Model: Supplier,
+      companyId,
+      field: "supplierCode",
+      prefix: "SUPP",
+      counterId: "supplierCodeSeries",
+    });
 
     // ✅ 3️⃣ Get latest supplier code
-    const lastSupplier = await Supplier.findOne({ companyId }).sort({
-      createdAt: -1,
-    });
-    let nextCodeNumber = lastSupplier
-      ? parseInt(lastSupplier.supplierCode?.split("-")[1] || "0", 10) + 1
-      : 1;
-
     // ✅ 4️⃣ Fetch all BankHeads once (for fast lookup)
     const bankHeads = await AccountHead.find({ companyId, isActive: true }).select("_id name");
     const bankMap = {};
@@ -138,10 +141,29 @@ export async function POST(req) {
         });
       } else {
         // Create new supplier
-        const supplierCode = `SUPP-${nextCodeNumber
-          .toString()
-          .padStart(4, "0")}`;
-        nextCodeNumber++;
+        const suppliedCode = normaliseManualPartyCode(row.supplierCode);
+        if (suppliedCode && !isValidManualPartyCode(suppliedCode)) {
+          skippedCount++;
+          results.push({ row: i + 1, success: false, errors: ["supplierCode must contain only letters, numbers, hyphens, or underscores"] });
+          continue;
+        }
+        if (suppliedCode && batchCodes.has(suppliedCode)) {
+          skippedCount++;
+          results.push({ row: i + 1, success: false, errors: [`supplierCode ${suppliedCode} is repeated in this upload`] });
+          continue;
+        }
+        if (suppliedCode && await Supplier.exists({ companyId, supplierCode: suppliedCode })) {
+          skippedCount++;
+          results.push({ row: i + 1, success: false, errors: [`supplierCode ${suppliedCode} already exists`] });
+          continue;
+        }
+        const supplierCode = suppliedCode || await reservePartyCode({
+          companyId, prefix: "SUPP", counterId: "supplierCodeSeries",
+        });
+        if (suppliedCode) await registerManualPartyCode({
+          companyId, code: supplierCode, prefix: "SUPP", counterId: "supplierCodeSeries",
+        });
+        batchCodes.add(supplierCode);
 
         const supplierData = {
           companyId,
@@ -169,6 +191,7 @@ export async function POST(req) {
           row: i + 1,
           success: true,
           action: "created",
+          code: supplierCode,
           warnings: errors,
         });
       }

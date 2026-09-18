@@ -6,7 +6,7 @@ import dbConnect from "@/lib/db";
 import SalesQuotation from "@/models/SalesQuotationModel";
 import { getTokenFromHeader, verifyJWT } from "@/lib/auth";
 import { checkPermission } from "@/lib/checkPermission";
-import { v2 as cloudinary } from "cloudinary";
+import cloudinary from "@/lib/cloudinary";
 
 // ✅ Cloudinary Config
 cloudinary.config({

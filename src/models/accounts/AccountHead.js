@@ -28,7 +28,7 @@ const AccountHeadSchema = new mongoose.Schema({
   group: {
     type: String,
     enum: [
-      "Current Asset", "Fixed Asset", "Other Asset", "Bank", "Bank Account", "Accounts Receivable",
+      "Current Asset", "Fixed Asset", "Other Asset", "Bank", "Bank Account", "Cash", "Accounts Receivable",
     
       "Current Liability", "Long Term Liability", "Other Liability", "Account Payable",
       "Capital", "Reserve",
@@ -76,7 +76,9 @@ const AccountHeadSchema = new mongoose.Schema({
 
 // Indexes
 AccountHeadSchema.index({ companyId: 1, name: 1 }, { unique: true });
-AccountHeadSchema.index({ companyId: 1, code: 1 });
+AccountHeadSchema.index({ companyId: 1, code: 1  ,   unique: true,   partialFilterExpression: {
+      code: { $type: "string" },
+    }, });
 AccountHeadSchema.index({ companyId: 1, type: 1 });
 AccountHeadSchema.index({ companyId: 1, group: 1 });
 AccountHeadSchema.index({ "bankDetails.accountNumber": 1 }, { sparse: true });

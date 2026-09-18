@@ -2,13 +2,13 @@ import { NextResponse } from "next/server";
 import dbConnect from "@/lib/db.js";
 import Customer from "@/models/CustomerModel";
 import { getTokenFromHeader, verifyJWT } from "@/lib/auth";
-import { v2 as cloudinary } from "cloudinary";
+import { storeAttachment } from "@/lib/fileStorage";
+import cloudinary from "@/lib/cloudinary";
+import mongoose from "mongoose";
+import AccountHead from "@/models/accounts/AccountHead";
+import CompanyUser from "@/models/CompanyUser";
+import SlaPolicy from "@/models/helpdesk/SlaPolicy";
 
-cloudinary.config({
-  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-  api_key: process.env.CLOUDINARY_API_KEY,
-  api_secret: process.env.CLOUDINARY_API_SECRET,
-});
 
 // ------------------- Helper functions -------------------
 function isAuthorized(user) {
@@ -31,18 +31,9 @@ async function validateUser(req) {
   return { user: decoded, error: null };
 }
 
-async function uploadToCloudinary(fileBuffer, originalName) {
-  return new Promise((resolve, reject) => {
-    const uploadStream = cloudinary.uploader.upload_stream(
-      {
-        folder: "customers",
-        resource_type: "auto",
-        public_id: `${Date.now()}_${originalName.replace(/\s/g, "_")}`,
-      },
-      (error, result) => (error ? reject(error) : resolve(result.secure_url))
-    );
-    uploadStream.end(fileBuffer);
-  });
+async function uploadToCloudinary(fileBuffer, originalName, companyId) {
+  const uploaded = await storeAttachment(Object.assign(fileBuffer, { name: originalName }), { companyId, folder: "customers" });
+  return uploaded.url;
 }
 
 async function parseMultipart(req) {
@@ -54,27 +45,90 @@ async function parseMultipart(req) {
 }
 
 // ------------------- GET /api/customers/[id] -------------------
+// ------------------- GET /api/customers/[id] -------------------
+
 export async function GET(req, { params }) {
   await dbConnect();
-  const { user, error } = await validateUser(req);
-  if (error) return NextResponse.json({ success: false, message: error }, { status: 401 });
-  if (!isAuthorized(user))
-    return NextResponse.json({ success: false, message: "Forbidden" }, { status: 403 });
 
-  const { id } = params;
-  if (!id) return NextResponse.json({ success: false, message: "Customer ID required" }, { status: 400 });
+  const { user, error } = await validateUser(req);
+
+  if (error) {
+    return NextResponse.json(
+      {
+        success: false,
+        message: error,
+      },
+      { status: 401 }
+    );
+  }
+
+  if (!isAuthorized(user)) {
+    return NextResponse.json(
+      {
+        success: false,
+        message: "Forbidden",
+      },
+      { status: 403 }
+    );
+  }
 
   try {
+    // Next.js 15+
+    const { id } = await params;
+
+    // Check customer ID
+    if (!id) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "Customer ID required",
+        },
+        { status: 400 }
+      );
+    }
+
+    // Prevent CastError for values like [object Object]
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "Invalid Customer ID",
+        },
+        { status: 400 }
+      );
+    }
+
     const customer = await Customer.findById(id)
       .populate("assignedAgents", "name email")
       .populate("glAccount", "name code type");
+
     if (!customer) {
-      return NextResponse.json({ success: false, message: "Customer not found" }, { status: 404 });
+      return NextResponse.json(
+        {
+          success: false,
+          message: "Customer not found",
+        },
+        { status: 404 }
+      );
     }
-    return NextResponse.json({ success: true, data: customer }, { status: 200 });
+
+    return NextResponse.json(
+      {
+        success: true,
+        data: customer,
+      },
+      { status: 200 }
+    );
   } catch (err) {
-    console.error(err);
-    return NextResponse.json({ success: false, message: "Failed to fetch customer" }, { status: 500 });
+    console.error("GET /api/customers/[id] error:", err);
+
+    return NextResponse.json(
+      {
+        success: false,
+        message: "Failed to fetch customer",
+      },
+      { status: 500 }
+    );
   }
 }
 
@@ -86,7 +140,7 @@ export async function PUT(req, { params }) {
     return NextResponse.json({ success: false, message: "Unauthorized" }, { status: 401 });
   }
 
-  const { id } = params;
+  const { id } = await params;
   if (!id) return NextResponse.json({ success: false, message: "Customer ID required" }, { status: 400 });
 
   try {
@@ -99,7 +153,7 @@ export async function PUT(req, { params }) {
       updateData = data;
       for (const file of files) {
         const buffer = Buffer.from(await file.arrayBuffer());
-        const url = await uploadToCloudinary(buffer, file.name);
+        const url = await uploadToCloudinary(buffer, file.name, user.companyId);
         uploadedUrls.push(url);
       }
     } else {
@@ -145,7 +199,7 @@ export async function PATCH(req, { params }) {
     return NextResponse.json({ success: false, message: "Unauthorized" }, { status: 401 });
   }
 
-  const { id } = params;
+  const { id } = await params;
   if (!id) return NextResponse.json({ success: false, message: "Customer ID required" }, { status: 400 });
 
   try {
@@ -176,7 +230,7 @@ export async function DELETE(req, { params }) {
     return NextResponse.json({ success: false, message: "Unauthorized" }, { status: 401 });
   }
 
-  const { id } = params;
+  const { id } = await params;
   if (!id) return NextResponse.json({ success: false, message: "Customer ID required" }, { status: 400 });
 
   try {

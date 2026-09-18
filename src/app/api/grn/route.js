@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import mongoose, { Types } from "mongoose";
-import { v2 as cloudinary } from "cloudinary";
+import cloudinary from "@/lib/cloudinary";
 import formidable from "formidable";
 import { Readable } from "stream";
 import dbConnect from "@/lib/db";
@@ -342,6 +342,24 @@ export async function POST(req) {
         }
       }
 
+      // Inventory receipt and its GRNI clearing journal commit together. The
+      // purchase invoice will later clear GRNI and create the supplier payable.
+      const totalAmount = grnData.grandTotal || grnData.items.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0);
+      if (totalAmount > 0) {
+        await autoGRN({
+          companyId,
+          amount: totalAmount,
+          taxAmount: grnData.gstTotal,
+          partyId: grnData.supplier,
+          partyName: grnData.supplierName,
+          referenceId: grn._id,
+          referenceNumber: grn.documentNumberGrn,
+          narration: `GRN ${grn.documentNumberGrn} - Stock received`,
+          date: grnData.postingDate || new Date(),
+          createdBy: decoded.id || decoded.userId,
+          session,
+        });
+      }
       await session.commitTransaction();
       session.endSession();
 

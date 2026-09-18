@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import connectDB from "@/lib/db";
 import { getTokenFromHeader, verifyJWT } from "@/lib/auth";
 import Transaction from "@/models/accounts/Transaction";
+import Supplier from "@/models/SupplierModels";
 import mongoose from "mongoose";
 
 export async function GET(req, { params }) {
@@ -18,7 +19,7 @@ export async function GET(req, { params }) {
       return NextResponse.json({ success: false, message: "Invalid token" }, { status: 401 });
     }
 
-    const { id } = params;
+    const { id } = await params;
     const { searchParams } = new URL(req.url);
     const fiscalYear = searchParams.get("fiscalYear");
     const fromDate = searchParams.get("fromDate");
@@ -27,6 +28,11 @@ export async function GET(req, { params }) {
     // Validate supplier ID
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return NextResponse.json({ success: false, message: "Invalid supplier ID" }, { status: 400 });
+    }
+
+    const supplier = await Supplier.findOne({ _id: id, companyId: user.companyId }).select("supplierName glAccount");
+    if (!supplier?.glAccount) {
+      return NextResponse.json({ success: false, message: "Supplier ledger account is not configured" }, { status: 404 });
     }
 
     const query = {
@@ -52,24 +58,12 @@ export async function GET(req, { params }) {
     const entries = [];
 
     for (const txn of transactions) {
-      let txnDebit = 0;
-      let txnCredit = 0;
-      
-      for (const line of txn.lines) {
-        if (line.type === "Debit") {
-          txnDebit += line.amount;
-          // For supplier: Debit decreases what we owe (payment made)
-          if (line.accountId && line.accountId.type === "Liability") {
-            runningBalance -= line.amount;
-          }
-        } else if (line.type === "Credit") {
-          txnCredit += line.amount;
-          // For supplier: Credit increases what we owe (purchase)
-          if (line.accountId && line.accountId.type === "Liability") {
-            runningBalance += line.amount;
-          }
-        }
-      }
+      const partyLines = txn.lines.filter((line) => String(line.accountId?._id || line.accountId) === String(supplier.glAccount));
+      const txnDebit = partyLines.filter((line) => line.type === "Debit").reduce((sum, line) => sum + line.amount, 0);
+      const txnCredit = partyLines.filter((line) => line.type === "Credit").reduce((sum, line) => sum + line.amount, 0);
+      // Supplier account is credit-normal: purchases increase the payable,
+      // payments and debit notes reduce it.
+      runningBalance += txnCredit - txnDebit;
 
       entries.push({
         _id: txn._id,
@@ -83,7 +77,7 @@ export async function GET(req, { params }) {
       });
     }
 
-    return NextResponse.json({ success: true, entries });
+    return NextResponse.json({ success: true, supplier: supplier.supplierName, entries, closingBalance: runningBalance });
   } catch (error) {
     console.error("Supplier ledger error:", error);
     return NextResponse.json({ success: false, message: error.message }, { status: 500 });

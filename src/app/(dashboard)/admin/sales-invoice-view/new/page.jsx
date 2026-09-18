@@ -472,8 +472,13 @@ const applySourceData = async (doc) => {
   // ─── Payment handlers ──────────────────────────────────────
   const addPayment = () => {
     if (paymentAmount <= 0) { toast.error("Amount must be >0"); return; }
+    if (paymentAmount > formData.openBalance) { toast.error("Payment cannot exceed the remaining balance"); return; }
+    if (["bank", "cheque"].includes(paymentMethod) && !paymentFields.bankAccountId) {
+      toast.error("Select the Bank Account head used for this payment");
+      return;
+    }
     const newPayment = { amount: paymentAmount, method: paymentMethod, paymentDate: paymentFields.paymentDate || new Date(), notes: paymentFields.notes };
-    if (paymentMethod === "bank") newPayment.bankAccountId = paymentFields.bankAccountId;
+    if (["bank", "cheque"].includes(paymentMethod)) newPayment.bankAccountId = paymentFields.bankAccountId;
     if (paymentMethod === "upi") { newPayment.upiId = paymentFields.upiId; newPayment.transactionId = paymentFields.transactionId; }
     if (paymentMethod === "card") { newPayment.cardLast4Digits = paymentFields.cardLast4Digits; newPayment.cardNetwork = paymentFields.cardNetwork; newPayment.transactionId = paymentFields.transactionId; }
     if (paymentMethod === "cheque") { newPayment.chequeNumber = paymentFields.chequeNumber; newPayment.chequeDate = paymentFields.chequeDate; newPayment.bankName = paymentFields.bankName; }
@@ -697,7 +702,7 @@ const applySourceData = async (doc) => {
               <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
                 <div><Lbl text="Amount" /><input type="number" className={fi()} value={paymentAmount} onChange={e => setPaymentAmount(Number(e.target.value))} placeholder="0" /></div>
                 <div><Lbl text="Method" /><select className={fi()} value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)}><option value="cash">Cash</option><option value="bank">Bank Transfer</option><option value="upi">UPI</option><option value="card">Card</option><option value="cheque">Cheque</option></select></div>
-                {paymentMethod === "bank" && <div className="sm:col-span-2"><Lbl text="Bank Account" /><select className={fi()} value={paymentFields.bankAccountId} onChange={e => setPaymentFields({...paymentFields, bankAccountId: e.target.value})}><option value="">Select</option>{bankAccounts.map(b => <option key={b._id} value={b._id}>{b.name}</option>)}</select></div>}
+                {["bank", "cheque"].includes(paymentMethod) && <div className="sm:col-span-2"><Lbl text="Payment Account" req /><select className={fi()} value={paymentFields.bankAccountId} onChange={e => setPaymentFields({...paymentFields, bankAccountId: e.target.value})}><option value="">Select Bank Account</option>{bankAccounts.map(b => <option key={b._id} value={b._id}>{b.name}{b.code ? ` (${b.code})` : ""}</option>)}</select><p className="mt-1 text-xs text-gray-400">Create an account in Account Head → Asset → Bank Account if it is not listed.</p></div>}
                 {paymentMethod === "upi" && <><div><Lbl text="UPI ID" /><input className={fi()} value={paymentFields.upiId} onChange={e => setPaymentFields({...paymentFields, upiId: e.target.value})} /></div><div><Lbl text="Transaction ID" /><input className={fi()} value={paymentFields.transactionId} onChange={e => setPaymentFields({...paymentFields, transactionId: e.target.value})} /></div></>}
                 {paymentMethod === "card" && <><div><Lbl text="Last 4 digits" /><input maxLength="4" className={fi()} value={paymentFields.cardLast4Digits} onChange={e => setPaymentFields({...paymentFields, cardLast4Digits: e.target.value})} /></div><div><Lbl text="Network" /><select className={fi()} value={paymentFields.cardNetwork} onChange={e => setPaymentFields({...paymentFields, cardNetwork: e.target.value})}><option>Visa</option><option>Mastercard</option><option>RuPay</option></select></div></>}
                 {paymentMethod === "cheque" && <><div><Lbl text="Cheque No." /><input className={fi()} value={paymentFields.chequeNumber} onChange={e => setPaymentFields({...paymentFields, chequeNumber: e.target.value})} /></div><div><Lbl text="Cheque Date" /><input type="date" className={fi()} value={paymentFields.chequeDate} onChange={e => setPaymentFields({...paymentFields, chequeDate: e.target.value})} /></div></>}
@@ -714,7 +719,7 @@ const applySourceData = async (doc) => {
                     {formData.payments.map((p, i) => (
                       <tr key={i}>
                         <td>₹{p.amount}</td><td className="capitalize">{p.method}</td>
-                        <td className="text-xs text-gray-500">{p.upiId || p.transactionId || p.chequeNumber || (p.bankAccountId && bankAccounts.find(b=>b._id===p.bankAccountId)?.name)}</td>
+                    <td className="text-xs text-gray-500">{(p.bankAccountId && bankAccounts.find(b=>b._id===p.bankAccountId)?.name) || p.upiId || p.transactionId || p.chequeNumber || "Cash in Hand"}</td>
                         <td>{p.paymentDate ? new Date(p.paymentDate).toLocaleDateString() : "—"}</td>
                         <td><button onClick={()=>removePayment(i)} className="text-red-500">Remove</button></td>
                       </tr>

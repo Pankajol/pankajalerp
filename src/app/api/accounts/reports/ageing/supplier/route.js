@@ -17,6 +17,7 @@ async function ageingReport(req, partyType) {
     const asOfDate = searchParams.get("asOfDate")
       ? new Date(searchParams.get("asOfDate"))
       : new Date();
+    asOfDate.setHours(23, 59, 59, 999);
 
     // Get all unpaid invoices for the party type
     const invoiceType = partyType === "Customer" ? "Sales Invoice" : "Purchase Invoice";
@@ -27,6 +28,7 @@ async function ageingReport(req, partyType) {
       companyId: user.companyId,
       type:      invoiceType,
       status:    "Posted",
+      date:      { $lte: asOfDate },
     }).sort({ date: 1 });
 
     // All payments — to calculate outstanding
@@ -34,6 +36,7 @@ async function ageingReport(req, partyType) {
       companyId: user.companyId,
       type:      paymentType,
       status:    "Posted",
+      date:      { $lte: asOfDate },
     });
 
     // Group payments by partyId
@@ -43,12 +46,16 @@ async function ageingReport(req, partyType) {
       return acc;
     }, {});
 
-    // Build ageing per party
+    // Allocate each party's payments to its oldest invoices first.  Subtracting
+    // the full party payment from every invoice would understate outstanding
+    // balances whenever a party has more than one invoice.
     const partyMap = {};
     for (const inv of invoices) {
       const id   = inv.partyId?.toString() || inv.partyName;
       const paid = paidByParty[id] || 0;
-      const outstanding = inv.totalAmount - paid;
+      const appliedPayment = Math.min(Number(inv.totalAmount) || 0, paid);
+      paidByParty[id] = paid - appliedPayment;
+      const outstanding = (Number(inv.totalAmount) || 0) - appliedPayment;
       if (outstanding <= 0) continue;
 
       const days = Math.floor((asOfDate - new Date(inv.date)) / (1000 * 60 * 60 * 24));
@@ -106,4 +113,4 @@ export const customerAgeing = (req) => ageingReport(req, "Customer");
 export const supplierAgeing = (req) => ageingReport(req, "Supplier");
 
 // For customer route file — export GET
-export async function GET(req) { return ageingReport(req, "Customer"); }
+export async function GET(req) { return ageingReport(req, "Supplier"); }

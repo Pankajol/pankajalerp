@@ -1,8 +1,9 @@
 "use client";
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { RefreshCw, Download, Printer } from "lucide-react";
 import * as XLSX from "xlsx";
 import html2pdf from "html2pdf.js";
+import { getFiscalYear, getFiscalYearOptions } from "@/lib/fiscalYear";
 
 const fmtINR = (n) =>
   new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(n || 0);
@@ -11,7 +12,8 @@ export default function CashFlowPage() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [fiscalYear, setFiscalYear] = useState(`${new Date().getFullYear() - 1}-${String(new Date().getFullYear()).slice(2)}`);
+  const [fiscalYear, setFiscalYear] = useState(() => getFiscalYear());
+  const fiscalYearOptions = useMemo(() => getFiscalYearOptions(), []);
   const token = () => localStorage.getItem("token") || "";
 
   const loadData = useCallback(async () => {
@@ -53,7 +55,11 @@ export default function CashFlowPage() {
       <div className="max-w-3xl mx-auto">
         <div className="flex justify-between items-center mb-6">
           <h1 className="text-3xl font-bold text-gray-900">Cash Flow Statement</h1>
-          <div className="flex gap-2">
+          <div className="flex gap-2 items-center flex-wrap justify-end">
+            <label className="sr-only" htmlFor="cash-flow-fiscal-year">Financial Year</label>
+            <select id="cash-flow-fiscal-year" value={fiscalYear} onChange={(event) => setFiscalYear(event.target.value)} className="border border-gray-300 rounded px-3 py-1.5 text-sm bg-white">
+              {fiscalYearOptions.map(({ value, label }) => <option key={value} value={value}>{label}</option>)}
+            </select>
             <button onClick={exportToExcel} className="bg-emerald-600 text-white px-3 py-1.5 rounded text-sm">Excel</button>
             <button onClick={exportToPDF} className="bg-red-600 text-white px-3 py-1.5 rounded text-sm">PDF</button>
             <button onClick={loadData} className="bg-indigo-600 text-white px-3 py-1.5 rounded text-sm flex items-center gap-1"><RefreshCw size={14} /> Refresh</button>

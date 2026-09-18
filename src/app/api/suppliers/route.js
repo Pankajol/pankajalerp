@@ -3,14 +3,9 @@ import dbConnect from "@/lib/db.js";
 import Supplier from "@/models/SupplierModels";
 import AccountHead from "@/models/accounts/AccountHead";
 import { getTokenFromHeader, verifyJWT } from "@/lib/auth";
-import { v2 as cloudinary } from "cloudinary";
+import { storeAttachment } from "@/lib/fileStorage";
+import { initialisePartyCodeSeries, reservePartyCode, normaliseManualPartyCode, isValidManualPartyCode, registerManualPartyCode } from "@/lib/partyCodeSeries";
 import mongoose from "mongoose";
-
-cloudinary.config({
-  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-  api_key: process.env.CLOUDINARY_API_KEY,
-  api_secret: process.env.CLOUDINARY_API_SECRET,
-});
 
 // ------------------- Helpers -------------------
 function isAuthorized(user) {
@@ -35,18 +30,9 @@ async function validateUser(req) {
   return { user: decoded, error: null };
 }
 
-async function uploadToCloudinary(fileBuffer, originalName) {
-  return new Promise((resolve, reject) => {
-    const uploadStream = cloudinary.uploader.upload_stream(
-      {
-        folder: "suppliers",
-        resource_type: "auto",
-        public_id: `${Date.now()}_${originalName.replace(/\s/g, "_")}`,
-      },
-      (error, result) => (error ? reject(error) : resolve(result.secure_url))
-    );
-    uploadStream.end(fileBuffer);
-  });
+async function uploadToCloudinary(fileBuffer, originalName, companyId) {
+  const uploaded = await storeAttachment(Object.assign(fileBuffer, { name: originalName }), { companyId, folder: "suppliers" });
+  return uploaded.url;
 }
 
 async function parseMultipart(req) {
@@ -163,21 +149,20 @@ export async function POST(req) {
       supplierData = data;
       for (const file of files) {
         const buffer = Buffer.from(await file.arrayBuffer());
-        const url = await uploadToCloudinary(buffer, file.name);
+        const url = await uploadToCloudinary(buffer, file.name, user.companyId);
         uploadedUrls.push(url);
       }
     } else {
       supplierData = await req.json();
     }
 
-    if (!supplierData.supplierCode) {
-      const latest = await Supplier.findOne({ companyId: user.companyId })
-        .select("supplierCode")
-        .sort({ supplierCode: -1 })
-        .lean();
-      const next = parseInt(latest?.supplierCode?.split("-")[1] || "0", 10) + 1;
-      supplierData.supplierCode = `SUPP-${String(next).padStart(4, "0")}`;
+    const suppliedSupplierCode = normaliseManualPartyCode(supplierData.supplierCode);
+    if (suppliedSupplierCode && !isValidManualPartyCode(suppliedSupplierCode)) {
+      return NextResponse.json({ success: false, message: "Supplier code may contain only letters, numbers, hyphens, or underscores" }, { status: 400 });
     }
+    await initialisePartyCodeSeries({ Model: Supplier, companyId: user.companyId, field: "supplierCode", prefix: "SUPP", counterId: "supplierCodeSeries" });
+    supplierData.supplierCode = suppliedSupplierCode || await reservePartyCode({ companyId: user.companyId, prefix: "SUPP", counterId: "supplierCodeSeries" });
+    if (suppliedSupplierCode) await registerManualPartyCode({ companyId: user.companyId, code: suppliedSupplierCode, prefix: "SUPP", counterId: "supplierCodeSeries" });
 
     // Required business fields
     if (!supplierData.supplierName || !supplierData.supplierType || !supplierData.supplierGroup || !supplierData.emailId || !supplierData.pan || !supplierData.gstCategory) {
@@ -278,7 +263,7 @@ export async function PUT(req, { params }) {
       supplierData = data;
       for (const file of files) {
         const buffer = Buffer.from(await file.arrayBuffer());
-        const url = await uploadToCloudinary(buffer, file.name);
+        const url = await uploadToCloudinary(buffer, file.name, user.companyId);
         uploadedUrls.push(url);
       }
     } else {

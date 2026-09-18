@@ -17,15 +17,12 @@ export async function GET(req) {
     const asOnDate = searchParams.get("asOnDate");
     const compareWith = searchParams.get("compareWith");
 
-    if (!fiscalYear) {
-      return NextResponse.json({ success: false, message: "fiscalYear is required" }, { status: 400 });
-    }
-
     const companyId = new mongoose.Types.ObjectId(user.companyId);
 
     // Helper to get balances for a period
     const getBalancesForPeriod = async (fy, snapshotDate = null) => {
-      const match = { companyId, fiscalYear: fy };
+      const match = { companyId };
+      if (fy) match.fiscalYear = fy;
       if (snapshotDate) {
         const endDate = new Date(snapshotDate);
         endDate.setHours(23, 59, 59, 999);
@@ -39,7 +36,8 @@ export async function GET(req) {
           $group: {
             _id: "$accountId",
             accountName: { $last: "$accountName" },
-            closingBalance: { $last: "$balance" },
+            totalDebit: { $sum: "$debit" },
+            totalCredit: { $sum: "$credit" },
           },
         },
         {
@@ -60,7 +58,15 @@ export async function GET(req) {
             group: "$account.group",
             parentId: "$account.parentId",
             isSystemAccount: "$account.isSystemAccount",
-            closingBalance: { $abs: "$closingBalance" },
+            closingBalance: {
+              $abs: {
+                $cond: [
+                  { $eq: ["$account.balanceType", "Debit"] },
+                  { $subtract: ["$totalDebit", "$totalCredit"] },
+                  { $subtract: ["$totalCredit", "$totalDebit"] },
+                ],
+              },
+            },
           },
         },
       ]);
@@ -68,6 +74,12 @@ export async function GET(req) {
       const assets = balances.filter(b => b.type === "Asset");
       const liabilities = balances.filter(b => b.type === "Liability");
       const equity = balances.filter(b => b.type === "Equity");
+      const income = balances.filter(b => b.type === "Income");
+      const expenses = balances.filter(b => b.type === "Expense");
+
+      // Current-period profit belongs to equity for the balance-sheet equation.
+      const retainedEarnings = income.reduce((sum, item) => sum + Math.abs(item.closingBalance), 0)
+        - expenses.reduce((sum, item) => sum + Math.abs(item.closingBalance), 0);
 
       return {
         assets: { items: assets },
@@ -76,7 +88,8 @@ export async function GET(req) {
         totals: {
           totalAssets: assets.reduce((s, a) => s + Math.abs(a.closingBalance), 0),
           totalLiabilities: liabilities.reduce((s, l) => s + Math.abs(l.closingBalance), 0),
-          totalEquity: equity.reduce((s, e) => s + Math.abs(e.closingBalance), 0),
+          totalEquity: equity.reduce((s, e) => s + Math.abs(e.closingBalance), 0) + retainedEarnings,
+          retainedEarnings,
         },
       };
     };

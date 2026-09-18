@@ -12,7 +12,7 @@ const TYPE_CFG = {
 };
 
 const GROUPS = {
-  Asset:     ["Current Asset", "Fixed Asset", "Other Asset", "Bank","AccountReceivable"],
+  Asset:     ["Current Asset", "Fixed Asset", "Other Asset", "Bank", "Bank Account", "Cash", "Accounts Receivable"],
   Liability: ["Current Liability", "Long Term Liability","Other Liability","AccountPayable"],
   Equity:    ["Capital", "Reserve"],
   Income:    ["Direct Income", "Indirect Income"],
@@ -48,7 +48,7 @@ function Toast({ toasts }) {
 function Modal({ open, onClose, onSave, editData }) {
   const [form, setForm] = useState({ 
     name: "", type: "Asset", group: "Current Asset", balanceType: "Debit", 
-    openingBalance: "", code: "", description: "", parentId: "" 
+    openingBalance: "", code: "", description: "", parentId: "", bankDetails: { bankName: "", accountNumber: "", ifscCode: "", branch: "" }
   });
   const [saving, setSaving] = useState(false);
 
@@ -63,12 +63,18 @@ function Modal({ open, onClose, onSave, editData }) {
         code: editData.code || "",
         description: editData.description || "",
         parentId: editData.parentId?._id || "",
+        bankDetails: {
+          bankName: editData.bankDetails?.bankName || "",
+          accountNumber: editData.bankDetails?.accountNumber || "",
+          ifscCode: editData.bankDetails?.ifscCode || "",
+          branch: editData.bankDetails?.branch || "",
+        },
         _id: editData._id
       });
     } else {
       setForm({ 
         name: "", type: "Asset", group: "Current Asset", balanceType: "Debit", 
-        openingBalance: "", code: "", description: "", parentId: "" 
+        openingBalance: "", code: "", description: "", parentId: "", bankDetails: { bankName: "", accountNumber: "", ifscCode: "", branch: "" }
       });
     }
   }, [editData, open]);
@@ -114,6 +120,20 @@ function Modal({ open, onClose, onSave, editData }) {
               <input required value={form.name} onChange={e => setForm(p => ({...p, name: e.target.value}))} placeholder="e.g. HDFC Savings Account"
                 style={{ width:"100%", padding:"10px 14px", borderRadius:10, background:"#f8fafc", border:"1px solid #cbd5e1", color:"#0f172a", fontFamily:"'DM Mono',monospace", fontSize:13, outline:"none" }} />
             </div>
+            {form.type === "Asset" && form.group === "Bank Account" && (
+              <>
+                <div style={{ gridColumn:"1/-1", padding:"12px", borderRadius:10, background:"#eff6ff", border:"1px solid #bfdbfe", fontFamily:"'DM Mono',monospace", fontSize:11, color:"#1d4ed8" }}>
+                  This account will appear in the Bank payment dropdown for sales and purchase invoices.
+                </div>
+                {[["bankName", "Bank Name", "e.g. HDFC Bank"], ["accountNumber", "Account Number", "e.g. 1234567890"], ["ifscCode", "IFSC Code", "e.g. HDFC0001234"], ["branch", "Branch", "e.g. Andheri East"]].map(([key, label, placeholder]) => (
+                  <div key={key}>
+                    <label style={{ fontFamily:"'DM Mono',monospace", fontSize:10, color:"#475569", textTransform:"uppercase", letterSpacing:1.5, display:"block", marginBottom:7 }}>{label}</label>
+                    <input value={form.bankDetails?.[key] || ""} onChange={e => setForm(p => ({ ...p, bankDetails: { ...p.bankDetails, [key]: e.target.value } }))} placeholder={placeholder}
+                      style={{ width:"100%", padding:"10px 14px", borderRadius:10, background:"#f8fafc", border:"1px solid #cbd5e1", color:"#0f172a", fontFamily:"'DM Mono',monospace", fontSize:13, outline:"none" }} />
+                  </div>
+                ))}
+              </>
+            )}
             <div>
               <label style={{ fontFamily:"'DM Mono',monospace", fontSize:10, color:"#475569", textTransform:"uppercase", letterSpacing:1.5, display:"block", marginBottom:7 }}>Group</label>
               <select value={form.group} onChange={e => setForm(p => ({...p, group: e.target.value}))}
@@ -159,6 +179,7 @@ export default function AccountHeadPage() {
   const [filterType, setFilterType] = useState("All");
   const [toasts, setToasts] = useState([]);
   const toastId = useRef(0);
+  const uploadRef = useRef(null);
 
   const addToast = (msg, type = "success") => {
     const id = ++toastId.current;
@@ -237,6 +258,57 @@ export default function AccountHeadPage() {
     else addToast(data.message || "Failed", "error");
   };
 
+  const downloadPaymentTemplate = () => {
+    const csv = "name,code,openingBalance,bankName,accountNumber,ifscCode,branch\nHDFC Current Account,BANK-001,0,HDFC Bank,1234567890,HDFC0001234,Andheri East\n";
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "payment-accounts-template.csv";
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const importPaymentAccounts = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+
+    try {
+      const XLSX = await import("xlsx");
+      const workbook = XLSX.read(await file.arrayBuffer(), { type: "array" });
+      const rows = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { defval: "" });
+      const accounts = rows.map((row) => ({
+        name: String(row.name || row["Account Name"] || "").trim(),
+        code: String(row.code || row["Account Code"] || "").trim(),
+        openingBalance: Number(row.openingBalance || row["Opening Balance"] || 0),
+        type: "Asset",
+        group: "Bank Account",
+        balanceType: "Debit",
+        bankDetails: {
+          bankName: String(row.bankName || row["Bank Name"] || "").trim(),
+          accountNumber: String(row.accountNumber || row["Account Number"] || "").trim(),
+          ifscCode: String(row.ifscCode || row["IFSC Code"] || "").trim(),
+          branch: String(row.branch || row.Branch || "").trim(),
+        },
+      })).filter((account) => account.name);
+
+      if (!accounts.length) throw new Error("The file has no payment account rows.");
+      const results = await Promise.all(accounts.map(async (account) => {
+        const res = await fetch("/api/accounts/heads", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token()}` },
+          body: JSON.stringify(account),
+        });
+        return res.json();
+      }));
+      const failed = results.filter((result) => !result.success);
+      addToast(failed.length ? `${accounts.length - failed.length} imported; ${failed.length} failed` : `${accounts.length} payment accounts imported` , failed.length ? "error" : "success");
+      await fetchHeads();
+    } catch (error) {
+      addToast(error.message || "Could not import payment accounts", "error");
+    }
+  };
+
   const filtered = useMemo(() => heads.filter(h => {
     const matchSearch = !search.trim() || h.name.toLowerCase().includes(search.toLowerCase()) || h.code?.includes(search);
     const matchType = filterType === "All" || h.type === filterType;
@@ -274,12 +346,17 @@ export default function AccountHeadPage() {
               <h1 style={{ fontSize:32, fontWeight:800, color:"#0f172a", margin:0 }}>Chart of Accounts</h1>
               <p style={{ margin:"6px 0 0", fontFamily:"'DM Mono',monospace", fontSize:13, color:"#475569" }}>{heads.length} accounts · Double-entry bookkeeping</p>
             </div>
+            <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
+              <input ref={uploadRef} type="file" accept=".csv,.xlsx,.xls" onChange={importPaymentAccounts} style={{ display:"none" }} />
+              <button onClick={downloadPaymentTemplate} style={{ padding:"11px 14px", borderRadius:12, border:"1px solid #93c5fd", background:"white", color:"#1d4ed8", fontFamily:"'Syne',sans-serif", fontWeight:700, fontSize:13, cursor:"pointer" }}>Download Template</button>
+              <button onClick={() => uploadRef.current?.click()} style={{ padding:"11px 14px", borderRadius:12, border:"1px solid #93c5fd", background:"#eff6ff", color:"#1d4ed8", fontFamily:"'Syne',sans-serif", fontWeight:700, fontSize:13, cursor:"pointer" }}>Upload Accounts</button>
             <button onClick={() => { setEditData(null); setShowModal(true); }}
               style={{ display:"flex", alignItems:"center", gap:8, background:"linear-gradient(135deg,#2563eb,#3b82f6)", border:"none", color:"#fff", padding:"11px 20px", borderRadius:12, fontFamily:"'Syne',sans-serif", fontWeight:700, fontSize:14, cursor:"pointer", boxShadow:"0 4px 12px rgba(37,99,235,0.2)", transition:"transform 0.2s" }}
               onMouseEnter={e => e.currentTarget.style.transform = "translateY(-2px)"}
               onMouseLeave={e => e.currentTarget.style.transform = "translateY(0)"}>
               <span style={{fontSize:18}}>+</span> Add Account
             </button>
+            </div>
           </div>
 
           <div style={{ display:"flex", gap:10, marginBottom:20, flexWrap:"wrap", animation:"ah-fadeUp 0.4s ease 0.05s both" }}>

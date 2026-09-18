@@ -62,6 +62,7 @@ const LedgerEntrySchema = new mongoose.Schema({
   // ── Party reference ───────────────────────────────────────
   partyName: { type: String },
   partyType: { type: String },
+  partyId: { type: mongoose.Schema.Types.ObjectId, default: null },
 
   fiscalYear: { type: String },
 
@@ -70,6 +71,7 @@ const LedgerEntrySchema = new mongoose.Schema({
 LedgerEntrySchema.index({ companyId: 1, accountId: 1, date: 1 });
 LedgerEntrySchema.index({ companyId: 1, transactionId: 1 });
 LedgerEntrySchema.index({ companyId: 1, fiscalYear: 1, accountId: 1 });
+LedgerEntrySchema.index({ companyId: 1, partyType: 1, partyId: 1, date: 1 });
 
 export default mongoose.models.LedgerEntry ||
   mongoose.model("LedgerEntry", LedgerEntrySchema);

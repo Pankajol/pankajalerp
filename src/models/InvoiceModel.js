@@ -60,6 +60,7 @@ const InvoiceItemSchema = new Schema({
 }, { _id: false });
 
 const PaymentDetailsSchema = new Schema({
+  paymentId: { type: Schema.Types.ObjectId, default: () => new mongoose.Types.ObjectId() },
   amount: { type: Number, required: true, default: 0 },
   method: {
     type: String,
@@ -90,7 +91,7 @@ const PurchaseInvoiceSchema = new Schema({
   postingDate: { type: Date, required: true },
   validUntil: { type: Date },
   documentDate: { type: Date },
-  documentNumberPurchaseInvoice: { type: String, required: true, unique: true },
+  documentNumberPurchaseInvoice: { type: String, required: true },
   grn: { type: Schema.Types.ObjectId, ref: "GRN" },
   purchaseOrder: { type: Schema.Types.ObjectId, ref: "PurchaseOrder" },
   invoiceType: {
@@ -102,6 +103,8 @@ const PurchaseInvoiceSchema = new Schema({
   qualityCheckDetails: [QualityCheckDetailSchema],
   totalBeforeDiscount: { type: Number, default: 0 },
   gstTotal: { type: Number, default: 0 },
+  freight: { type: Number, default: 0 },
+  rounding: { type: Number, default: 0 },
   grandTotal: { type: Number, required: true, default: 0 },
   paidAmount: { type: Number, default: 0 },
   remainingAmount: { type: Number, default: 0 },

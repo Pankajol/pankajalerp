@@ -37,7 +37,8 @@ export async function GET(req) {
           accountName: { $last: "$accountName" },
           totalDebit: { $sum: "$debit" },
           totalCredit: { $sum: "$credit" },
-          closingBalance: { $last: "$balance" },
+          // Do not use LedgerEntry.balance here: it is a display projection
+          // and can be stale when a back-dated document is posted.
         },
       },
       {
@@ -58,7 +59,15 @@ export async function GET(req) {
           type: "$account.type",
           group: "$account.group",
           parentId: "$account.parentId",
-          closingBalance: { $abs: "$closingBalance" },
+          closingBalance: {
+            $abs: {
+              $cond: [
+                { $eq: ["$account.balanceType", "Debit"] },
+                { $subtract: ["$totalDebit", "$totalCredit"] },
+                { $subtract: ["$totalCredit", "$totalDebit"] },
+              ],
+            },
+          },
         },
       },
       { $sort: { type: 1, group: 1, name: 1 } },

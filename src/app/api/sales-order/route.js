@@ -7,7 +7,7 @@ import SalesOrder from '@/models/SalesOrder';
 import Inventory from '@/models/Inventory';
 import StockMovement from '@/models/StockMovement';
 import { getTokenFromHeader, verifyJWT } from '@/lib/auth';
-import { v2 as cloudinary } from 'cloudinary';
+import cloudinary from "@/lib/cloudinary";
 import Counter from '@/models/Counter';
 import Customer from '@/models/CustomerModel';
 import Item from '@/models/ItemModels';

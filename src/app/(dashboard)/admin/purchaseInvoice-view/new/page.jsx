@@ -99,9 +99,39 @@ const ReadField = ({ label, value }) => (
   </div>
 );
 
+function AttachmentPreview({ file, onRemove }) {
+  const [url, setUrl] = useState("");
+  const name = file?.name || file?.fileName || "Attachment";
+  const type = file?.type || file?.fileType || "";
+  useEffect(() => {
+    let objectUrl = "";
+    const sourceUrl = file?.fileUrl || file?.url || "";
+    if (file instanceof File) {
+      objectUrl = URL.createObjectURL(file);
+      setUrl(objectUrl);
+    } else if (sourceUrl.startsWith("/api/uploads/")) {
+      const token = localStorage.getItem("token");
+      axios.get(sourceUrl, { responseType: "blob", headers: token ? { Authorization: `Bearer ${token}` } : {} })
+        .then((response) => { objectUrl = URL.createObjectURL(response.data); setUrl(objectUrl); })
+        .catch(() => setUrl(""));
+    } else {
+      setUrl(sourceUrl);
+    }
+    return () => { if (objectUrl) URL.revokeObjectURL(objectUrl); };
+  }, [file]);
+  const isPdf = type === "application/pdf" || name.toLowerCase().endsWith(".pdf");
+  return <div className="relative border rounded-xl p-2 bg-gray-50 group">
+    <div className="h-20 flex items-center justify-center overflow-hidden">
+      {!url ? <span className="text-xs text-gray-400">Loading…</span> : isPdf ? <object data={url} type="application/pdf" className="h-full w-full" /> : <img src={url} alt={name} className="h-full w-full object-cover" />}
+    </div>
+    <p className="mt-1 truncate text-[10px] text-gray-500" title={name}>{name}</p>
+    <button type="button" onClick={onRemove} className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-[10px] shadow-lg"><FaTimes /></button>
+  </div>;
+}
+
 const initialState = {
   supplier: "", supplierCode: "", supplierName: "", contactPerson: "", refNumber: "",
-  status: "draft",
+  status: "posted",
   postingDate: formatDateForInput(new Date()),
   documentDate: formatDateForInput(new Date()),
   dueDate: "",
@@ -119,7 +149,7 @@ const initialState = {
   sourceId: "", sourceType: "",
   payments: [],
   // ✅ Ensure these fields exist
-  invoiceType: "",
+  invoiceType: "Normal",
   purchaseOrder: "",
 };
 
@@ -190,11 +220,11 @@ function PurchaseInvoiceForm() {
 
   // Recalculate totals
   useEffect(() => {
-    const totalBefore = invoiceData.items.reduce((sum, it) => sum + (it.priceAfterDiscount || 0) * (it.quantity || 0), 0);
-    const gstTotal = invoiceData.items.reduce((sum, it) => sum + (it.gstAmount || 0), 0);
+    const totalBefore = round(invoiceData.items.reduce((sum, it) => sum + (Number(it.totalAmount) || 0), 0));
+    const gstTotal = round(invoiceData.items.reduce((sum, it) => sum + (Number(it.gstAmount) || 0) + (Number(it.igstAmount) || 0), 0));
     const freight = Number(invoiceData.freight) || 0;
     const rounding = Number(invoiceData.rounding) || 0;
-    const grand = totalBefore + gstTotal + freight + rounding;
+    const grand = round(totalBefore + gstTotal + freight + rounding);
     setInvoiceData(prev => ({ ...prev, totalBeforeDiscount: totalBefore, gstTotal, grandTotal: grand }));
   }, [invoiceData.items, invoiceData.freight, invoiceData.rounding]);
 
@@ -362,12 +392,17 @@ function PurchaseInvoiceForm() {
   });
 
   const addPayment = () => {
-    if (paymentAmount <= 0) {
+    const amount = round(paymentAmount);
+    const balanceDue = round(invoiceData.grandTotal - totalPaid);
+    if (amount <= 0) {
       toast.error("Payment amount must be > 0");
       return;
     }
+    if (amount > balanceDue) { toast.error(`Payment cannot exceed the remaining amount (₹${balanceDue.toFixed(2)}).`); return; }
+    if (paymentMethod === "bank" && !paymentFields.bankAccountId) { toast.error("Select the bank account used for this payment."); return; }
+    if (paymentMethod === "cheque" && !paymentFields.chequeNumber) { toast.error("Cheque number is required."); return; }
     const newPayment = {
-      amount: paymentAmount,
+      amount,
       method: paymentMethod,
       paymentDate: paymentFields.paymentDate || new Date(),
       notes: paymentFields.notes || undefined,
@@ -401,8 +436,8 @@ function PurchaseInvoiceForm() {
     setInvoiceData(prev => ({ ...prev, payments: prev.payments.filter((_, i) => i !== idx) }));
   };
 
-  const totalPaid = (invoiceData.payments || []).reduce((s, p) => s + (p.amount || 0), 0);
-  const remaining = invoiceData.grandTotal - totalPaid;
+  const totalPaid = round((invoiceData.payments || []).reduce((s, p) => s + (Number(p.amount) || 0), 0));
+  const remaining = Math.max(round(invoiceData.grandTotal - totalPaid), 0);
 
   const handleFileSelect = (e) => {
     const files = Array.from(e.target.files);
@@ -501,7 +536,7 @@ function PurchaseInvoiceForm() {
               <select className={fi()} name="status" value={invoiceData.status} onChange={handleInputChange}>
                 <option value="draft">Draft</option><option value="submitted">Submitted</option>
                 <option value="pending">Pending</option><option value="approved">Approved</option>
-                <option value="rejected">Rejected</option>
+                <option value="rejected">Rejected</option><option value="posted">Posted</option>
               </select>
             </div>
             <div>
@@ -580,6 +615,10 @@ function PurchaseInvoiceForm() {
             <ReadField label="GST Total" value={`₹ ${invoiceData.gstTotal.toFixed(2)}`} />
             <div><Lbl text="Grand Total" /><div className="px-3 py-2.5 rounded-lg border-2 border-indigo-200 bg-indigo-50 font-extrabold text-indigo-700">₹ {invoiceData.grandTotal.toFixed(2)}</div></div>
           </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
+            <div><Lbl text="Invoice Freight" /><input name="freight" type="number" step="0.01" className={fi()} value={invoiceData.freight} onChange={handleInputChange} /></div>
+            <div><Lbl text="Round Off (+ / -)" /><input name="rounding" type="number" step="0.01" className={fi()} value={invoiceData.rounding} onChange={handleInputChange} /></div>
+          </div>
           <div className="mt-4">
             <Lbl text="Remarks / Notes" />
             <textarea className={`${fi()} resize-none`} name="remarks" rows={2} value={invoiceData.remarks || ""} onChange={handleInputChange} placeholder="Any additional notes..." />
@@ -593,8 +632,12 @@ function PurchaseInvoiceForm() {
               <p className="text-sm font-bold mb-3">Record a payment</p>
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
                 {/* Payment fields – unchanged */}
-                <div><Lbl text="Amount" /><input type="number" className={fi()} value={paymentAmount} onChange={e => setPaymentAmount(Number(e.target.value))} placeholder="0.00" /></div>
-                <div><Lbl text="Method" /><select className={fi()} value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)}>...</select></div>
+                <div><Lbl text="Amount" /><input type="number" min="0" step="0.01" className={fi()} value={paymentAmount || ""} onChange={e => setPaymentAmount(e.target.value)} placeholder={`Max ₹${remaining.toFixed(2)}`} /></div>
+                <div><Lbl text="Method" /><select className={fi()} value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)}><option value="cash">Cash</option><option value="bank">Bank Transfer</option><option value="upi">UPI</option><option value="card">Card</option><option value="netbanking">Net Banking</option><option value="wallet">Wallet</option><option value="cheque">Cheque</option></select></div>
+                {["bank", "cheque"].includes(paymentMethod) && <div><Lbl text="Bank Account" req /><select className={fi()} value={paymentFields.bankAccountId} onChange={e => setPaymentFields(p => ({ ...p, bankAccountId: e.target.value }))}><option value="">Select account</option>{bankAccounts.map(a => <option key={a._id} value={a._id}>{a.name}</option>)}</select></div>}
+                {paymentMethod === "cheque" && <div><Lbl text="Cheque Number" req /><input className={fi()} value={paymentFields.chequeNumber} onChange={e => setPaymentFields(p => ({ ...p, chequeNumber: e.target.value }))} /></div>}
+                {!["cash", "bank"].includes(paymentMethod) && <div><Lbl text="Transaction / UTR" /><input className={fi()} value={paymentFields.transactionId} onChange={e => setPaymentFields(p => ({ ...p, transactionId: e.target.value }))} /></div>}
+                <div><Lbl text="Payment Date" /><input type="date" className={fi()} value={paymentFields.paymentDate} onChange={e => setPaymentFields(p => ({ ...p, paymentDate: e.target.value }))} /></div>
                 {/* ... rest of payment fields (unchanged) */}
                 <div className="flex items-end"><button onClick={addPayment} className="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-semibold">Add Payment</button></div>
               </div>
@@ -633,23 +676,14 @@ function PurchaseInvoiceForm() {
         {/* Attachments */}
         <SectionCard icon={FaPaperclip} title="Attachments" color="gray">
           <div className="mb-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
-            {existingFiles.map((file, idx) => (
-              <div key={idx} className="relative border rounded-xl p-2 bg-gray-50 group">
-                <div className="h-20 flex items-center justify-center overflow-hidden">
-                  {file.fileUrl?.toLowerCase().endsWith(".pdf") ? <object data={file.fileUrl} type="application/pdf" className="h-full w-full" /> : <img src={file.fileUrl} className="h-full object-cover" />}
-                </div>
-                <button onClick={() => removeExistingFile(file, idx)} className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-[10px] shadow-lg"><FaTimes /></button>
-              </div>
-            ))}
+            {existingFiles.map((file, idx) => <AttachmentPreview key={`existing-${idx}`} file={file} onRemove={() => removeExistingFile(file, idx)} />)}
           </div>
           <label className="flex items-center justify-center gap-3 px-4 py-4 rounded-xl border-2 border-dashed border-gray-200 cursor-pointer hover:bg-indigo-50 transition-all group">
             <FaPaperclip className="text-gray-300 group-hover:text-indigo-400" />
             <span className="text-sm font-medium text-gray-400">Upload files (PDF, images)</span>
             <input type="file" multiple accept="image/*,application/pdf" hidden onChange={handleFileSelect} />
           </label>
-          {attachments.length > 0 && (
-            <div className="mt-3 text-xs text-gray-400">{attachments.length} new file(s) ready</div>
-          )}
+          {attachments.length > 0 && <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-3">{attachments.map((file, idx) => <AttachmentPreview key={`${file.name}-${file.size}-${idx}`} file={file} onRemove={() => setAttachments(prev => prev.filter((_, i) => i !== idx))} />)}</div>}
         </SectionCard>
 
         {/* Action Buttons */}

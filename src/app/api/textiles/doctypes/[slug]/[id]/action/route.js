@@ -29,6 +29,7 @@ export async function POST(req, { params }) {
   if (action.create) {
     const target = getTextileDoctype(action.create);
     if (!target) return NextResponse.json({ success: false, message: "Action target is not configured" }, { status: 400 });
+    if (target.canonicalRoute) return NextResponse.json({ success: false, message: `Create this record in ${target.canonicalLabel}; it is the source of truth.`, canonicalRoute: target.canonicalRoute }, { status: 409 });
     const sourceData = record.data?.toObject ? record.data.toObject() : record.data || {};
     const copied = cleanTextileData(target, sourceData);
     createdDocument = await TextileDocument.create({

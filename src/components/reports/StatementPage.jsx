@@ -4,6 +4,7 @@ import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { Search, ChevronRight, ChevronDown, X, Download, Printer, RefreshCw } from "lucide-react";
+import { getFiscalYear, getFiscalYearOptions } from "@/lib/fiscalYear";
 
 const fmtINR = (n) =>
   new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(n || 0);
@@ -26,22 +27,53 @@ function useDebounce(value, delay) {
 export default function StatementPage({ type = "bank" }) {
   const token = () => localStorage.getItem("token") || "";
 
+  const fetchAllParties = async (endpoint) => {
+    const headers = { Authorization: `Bearer ${token()}` };
+    const firstResponse = await fetch(`${endpoint}?page=1&limit=100`, { headers });
+    const first = await firstResponse.json();
+    if (!firstResponse.ok || !first.success) {
+      throw new Error(first.message || `Failed to load ${endpoint}`);
+    }
+
+    const records = Array.isArray(first.data) ? first.data : [];
+    const pages = Math.max(Number(first.meta?.pages) || 1, 1);
+    if (pages === 1) return records;
+
+    const remainingPages = await Promise.all(
+      Array.from({ length: pages - 1 }, (_, index) => index + 2).map(async (page) => {
+        const response = await fetch(`${endpoint}?page=${page}&limit=100`, { headers });
+        const result = await response.json();
+        if (!response.ok || !result.success) {
+          throw new Error(result.message || `Failed to load ${endpoint} page ${page}`);
+        }
+        return Array.isArray(result.data) ? result.data : [];
+      })
+    );
+    return records.concat(...remainingPages);
+  };
+
   const TYPE_CONFIG = {
     bank: {
       title: "Bank Statement",
       color: "emerald",
       fetchAccounts: async () => {
-        const res = await fetch("/api/accounts/heads?isActive=true&type=Asset", {
+        const res = await fetch("/api/accounts/heads?type=Asset&init=true", {
           headers: { Authorization: `Bearer ${token()}` },
         });
         const d = await res.json();
-        if (d.success) {
-          return d.data.filter(a => 
-            a.group === "Bank Account" || 
-            (a.group === "Current Asset" && a.name.toLowerCase().includes("bank"))
-          );
+        if (!res.ok || !d.success) {
+          throw new Error(d.message || "Failed to load bank accounts");
         }
-        return [];
+        return (Array.isArray(d.data) ? d.data : []).filter((account) => {
+          const name = String(account.name || "").toLowerCase();
+          const group = String(account.group || "").toLowerCase();
+          return account.type === "Asset" && (
+            group === "bank" ||
+            group === "bank account" ||
+            Boolean(account.bankDetails?.accountNumber) ||
+            (group === "current asset" && /bank|cash|upi|wallet|payment/.test(name))
+          );
+        });
       },
       fetchLedger: async (accountId, fiscalYear, fromDate, toDate) => {
         let url = `/api/accounts/ledger/${accountId}`;
@@ -59,19 +91,13 @@ export default function StatementPage({ type = "bank" }) {
       title: "Customer Statement",
       color: "blue",
       fetchAccounts: async () => {
-        const res = await fetch("/api/customers", {
-          headers: { Authorization: `Bearer ${token()}` },
-        });
-        const d = await res.json();
-        if (d.success) {
-          return d.data.map(c => ({
+        const customers = await fetchAllParties("/api/customers");
+        return customers.map(c => ({
             _id: c._id,
-            name: c.customerName,
-            code: c.customerCode,
+            name: c.customerName || c.name || "Unnamed customer",
+            code: c.customerCode || c.code || "",
             type: "Customer",
           }));
-        }
-        return [];
       },
       fetchLedger: async (customerId, fiscalYear, fromDate, toDate) => {
         let url = `/api/customers/${customerId}/ledger`;
@@ -89,19 +115,13 @@ export default function StatementPage({ type = "bank" }) {
       title: "Supplier Statement",
       color: "rose",
       fetchAccounts: async () => {
-        const res = await fetch("/api/suppliers", {
-          headers: { Authorization: `Bearer ${token()}` },
-        });
-        const d = await res.json();
-        if (d.success) {
-          return d.data.map(s => ({
+        const suppliers = await fetchAllParties("/api/suppliers");
+        return suppliers.map(s => ({
             _id: s._id,
-            name: s.supplierName,
-            code: s.supplierCode,
+            name: s.supplierName || s.name || "Unnamed supplier",
+            code: s.supplierCode || s.code || "",
             type: "Supplier",
           }));
-        }
-        return [];
       },
       fetchLedger: async (supplierId, fiscalYear, fromDate, toDate) => {
         let url = `/api/suppliers/${supplierId}/ledger`;
@@ -120,11 +140,13 @@ export default function StatementPage({ type = "bank" }) {
   const config = TYPE_CONFIG[type] || TYPE_CONFIG.bank;
 
   const [accounts, setAccounts] = useState([]);
+  const [accountsLoading, setAccountsLoading] = useState(true);
+  const [accountsError, setAccountsError] = useState("");
   const [entries, setEntries] = useState([]);
   const [selectedAccountId, setSelectedAccountId] = useState("");
   const [selectedAccountName, setSelectedAccountName] = useState("");
   const [loading, setLoading] = useState(false);
-  const [fiscalYear, setFiscalYear] = useState(`${new Date().getFullYear() - 1}-${String(new Date().getFullYear()).slice(2)}`);
+  const [fiscalYear, setFiscalYear] = useState(() => getFiscalYear());
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
@@ -135,11 +157,17 @@ export default function StatementPage({ type = "bank" }) {
   // Fetch accounts on mount
   useEffect(() => {
     const loadAccounts = async () => {
+      setAccountsLoading(true);
+      setAccountsError("");
       try {
         const list = await config.fetchAccounts();
         setAccounts(list);
       } catch (err) {
         console.error("Failed to fetch accounts:", err);
+        setAccounts([]);
+        setAccountsError(`Unable to load ${type === "customer" ? "customers" : type === "supplier" ? "suppliers" : "accounts"}.`);
+      } finally {
+        setAccountsLoading(false);
       }
     };
     loadAccounts();
@@ -308,7 +336,11 @@ export default function StatementPage({ type = "bank" }) {
                     </div>
                   </div>
                   <div>
-                    {filteredAccounts.length === 0 ? (
+                    {accountsLoading ? (
+                      <div className="p-4 text-center text-gray-400 text-sm">Loading list...</div>
+                    ) : accountsError ? (
+                      <div className="p-4 text-center text-red-500 text-sm">{accountsError}</div>
+                    ) : filteredAccounts.length === 0 ? (
                       <div className="p-4 text-center text-gray-400 text-sm">No results found</div>
                     ) : (
                       filteredAccounts.map(acc => (
@@ -332,16 +364,16 @@ export default function StatementPage({ type = "bank" }) {
               )}
             </div>
 
-            {/* Fiscal Year */}
+            {/* Financial Year */}
             <div>
-              <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Fiscal Year</label>
+              <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Financial Year</label>
               <select
                 value={fiscalYear}
                 onChange={(e) => setFiscalYear(e.target.value)}
                 className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
               >
-                {[2023, 2024, 2025, 2026, 2027].map((y) => (
-                  <option key={y} value={`${y}-${String(y + 1).slice(2)}`}>{y}-{String(y + 1).slice(2)}</option>
+                {getFiscalYearOptions().map(({ value, label }) => (
+                  <option key={value} value={value}>{label}</option>
                 ))}
               </select>
             </div>
@@ -445,7 +477,6 @@ export default function StatementPage({ type = "bank" }) {
                   </tr>
                 </thead>
                 <tbody>
-                  <table></table>
                   {filteredEntries.map((e, idx) => (
                     <tr key={e._id || idx} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
                       <td className="px-4 py-3 text-sm font-mono text-gray-600 whitespace-nowrap">

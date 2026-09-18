@@ -1,874 +1,237 @@
-// 📁 src/lib/autoTransaction.js
-// ✅ Auto create accounting entries when modules fire events
-// Import this helper in: Sales Invoice, Purchase Invoice, Payment Entry, Payroll, GRN
-
+/** Central, double-entry posting service. Transaction is the source of truth;
+ * LedgerEntry is the per-account projection used by ledger screens. */
 import Transaction from "@/models/accounts/Transaction";
 import LedgerEntry from "@/models/accounts/LedgerEntry";
 import AccountHead from "@/models/accounts/AccountHead";
-import Supplier from "@/models/SupplierModels";
+import Counter from "@/models/Counter";
+import mongoose from "mongoose";
 import Customer from "@/models/CustomerModel";
-import dbConnect from "@/lib/db";
+import Supplier from "@/models/SupplierModels";
 
-// ─── Get running balance for an account ─────────────────────
-async function getBalance(companyId, accountId) {
-  const last = await LedgerEntry.findOne(
-    { companyId, accountId },
-    { balance: 1 },
-    { sort: { date: -1, createdAt: -1 } }
+const SYSTEM_ACCOUNTS = {
+  "Cash in Hand": { type: "Asset", group: "Cash", balanceType: "Debit" },
+  "Bank Account": { type: "Asset", group: "Bank Account", balanceType: "Debit" },
+  "Digital Payments": { type: "Asset", group: "Current Asset", balanceType: "Debit" },
+  "Sales Revenue": { type: "Income", group: "Direct Income", balanceType: "Credit" },
+  "Output GST Payable": { type: "Liability", group: "Current Liability", balanceType: "Credit" },
+  "Input GST Credit": { type: "Asset", group: "Current Asset", balanceType: "Debit" },
+  "Goods Received Not Invoiced": { type: "Liability", group: "Current Liability", balanceType: "Credit" },
+  "Sales Returns": { type: "Expense", group: "Direct Expense", balanceType: "Debit" },
+  Purchase: { type: "Expense", group: "Direct Expense", balanceType: "Debit" },
+  "Purchase Returns": { type: "Income", group: "Direct Income", balanceType: "Credit" },
+  "Inventory / Stock": { type: "Asset", group: "Current Asset", balanceType: "Debit" },
+  "Salary Expense": { type: "Expense", group: "Indirect Expense", balanceType: "Debit" },
+};
+const TYPE_PREFIX = { "Sales Invoice": "SI", "Purchase Invoice": "PI", Receipt: "REC", Payment: "PAY", "Credit Note": "CN", "Debit Note": "DN", "Journal Entry": "JE", Contra: "CTR" };
+
+const money = (value) => {
+  const amount = Number(value);
+  if (!Number.isFinite(amount) || amount <= 0) throw new Error("Amount must be greater than zero");
+  return Math.round((amount + Number.EPSILON) * 100) / 100;
+};
+
+async function systemAccount(companyId, name, session = null) {
+  const definition = SYSTEM_ACCOUNTS[name];
+  if (!definition) throw new Error(`Unknown system account: ${name}`);
+  return AccountHead.findOneAndUpdate({ companyId, name }, { $setOnInsert: { companyId, name, ...definition, isActive: true, isSystemAccount: true } }, { upsert: true, new: true, session });
+}
+async function partyAccount(companyId, partyType, partyId, session = null) {
+  const Model = partyType === "Customer" ? Customer : Supplier;
+  const party = await Model.findOne({ _id: partyId, companyId }).select("glAccount customerName supplierName customerCode supplierCode").session(session);
+  if (!party) throw new Error(`${partyType} does not belong to this company`);
+  let account = party.glAccount
+    ? await AccountHead.findOne({ _id: party.glAccount, companyId, isActive: true }).session(session)
+    : null;
+  // Imports and older master records may not yet have a party ledger. Create
+  // the subsidiary account on first financial posting so an invoice never
+  // silently loses its accounting entry.
+  if (!account) {
+    const partyName = party.customerName || party.supplierName || `${partyType} ${partyId}`;
+    const type = partyType === "Customer" ? "Asset" : "Liability";
+    const partyCode = String(party.customerCode || party.supplierCode || partyId).replace(/[^a-zA-Z0-9-]/g, "").slice(-20);
+    const code = `${partyType === "Customer" ? "CUS" : "SUP"}-${partyCode}`;
+    // Never locate a party ledger only by display name: two parties can share a
+    // name. The deterministic code guarantees that each master record gets its
+    // own subsidiary account when importing older data without a glAccount.
+    account = await AccountHead.findOneAndUpdate(
+      { companyId, code },
+      {
+        $setOnInsert: {
+          companyId,
+          name: `${partyType} ${partyCode} - ${partyName}`,
+          code,
+          type,
+          group: partyType === "Customer" ? "Accounts Receivable" : "Current Liability",
+          balanceType: partyType === "Customer" ? "Debit" : "Credit",
+          isSystemAccount: false,
+          isActive: true,
+        },
+      },
+      { upsert: true, new: true, session }
+    );
+    party.glAccount = account._id;
+    await party.save({ session });
+  }
+  if (!account) throw new Error(`${partyType} ledger account is unavailable`);
+  return account;
+}
+async function paymentAccount(companyId, bankAccountId, fallbackName, session = null) {
+  if (bankAccountId) {
+    const account = await AccountHead.findOne({ _id: bankAccountId, companyId, type: "Asset", isActive: true }).session(session);
+    if (!account) throw new Error("Selected cash/bank account is unavailable");
+    return account;
+  }
+  return systemAccount(companyId, fallbackName || "Bank Account", session);
+}
+async function nextNumber(companyId, type, session = null) {
+  const counter = await Counter.findOneAndUpdate(
+    { companyId, id: `accounting_${type}` },
+    { $inc: { seq: 1 } },
+    { upsert: true, new: true, session }
   );
-  return last?.balance || 0;
+  return `${TYPE_PREFIX[type] || "TXN"}-${new Date().getFullYear()}-${String(counter.seq).padStart(5, "0")}`;
 }
 
-// ─── Post ledger entries after a transaction ─────────────────
-async function postLedger(transaction) {
-  const entries = [];
-  for (const line of transaction.lines) {
-    const prev    = await getBalance(transaction.companyId, line.accountId);
-    const account = await AccountHead.findById(line.accountId);
-    const isDebitNormal = account?.balanceType === "Debit";
-    const newBal = isDebitNormal
-      ? prev + (line.type === "Debit" ? line.amount : -line.amount)
-      : prev + (line.type === "Credit" ? line.amount : -line.amount);
-
-    entries.push({
-      companyId:         transaction.companyId,
-      accountId:         line.accountId,
-      accountName:       line.accountName || account?.name,
-      transactionId:     transaction._id,
-      transactionNumber: transaction.transactionNumber,
-      transactionType:   transaction.type,
-      date:              transaction.date,
-      debit:             line.type === "Debit"  ? line.amount : 0,
-      credit:            line.type === "Credit" ? line.amount : 0,
-      balance:           newBal,
-      narration:         transaction.narration,
-      partyName:         transaction.partyName,
-      partyType:         transaction.partyType,
-      fiscalYear:        transaction.fiscalYear,
-    });
-  }
-  await LedgerEntry.insertMany(entries);
-}
-
-// ─── Auto number generator ────────────────────────────────────
-async function genNumber(companyId, type) {
-  const map = { "Sales Invoice":"SI","Purchase Invoice":"PI","Payment":"PAY","Receipt":"REC","Journal Entry":"JE","Contra":"CTR" };
-  const prefix = map[type] || "TXN";
-  const count  = await Transaction.countDocuments({ companyId, type }) + 1;
-  return `${prefix}-${new Date().getFullYear()}-${String(count).padStart(4,"0")}`;
-}
-
-// ─── Helper to find system account by name ───────────────────
-async function findAccount(companyId, name) {
-  const acc = await AccountHead.findOne({ companyId, name, isActive: true });
-  if (acc) return acc;
-
-  const systemAccounts = {
-    "Accounts Receivable": { type: "Asset", group: "Accounts Receivable", balanceType: "Debit" },
-    "Accounts Payable": { type: "Liability", group: "Current Liability", balanceType: "Credit" },
-    "Sales Revenue": { type: "Income", group: "Direct Income", balanceType: "Credit" },
-    "Sales Returns": { type: "Expense", group: "Direct Expense", balanceType: "Debit" },
-    "Purchase": { type: "Expense", group: "Direct Expense", balanceType: "Debit" },
-    "Purchase Returns": { type: "Income", group: "Direct Income", balanceType: "Credit" },
-  };
-  const definition = systemAccounts[name];
-  if (!definition) throw new Error(`Account not found: "${name}". Please create it in Chart of Accounts.`);
-  return AccountHead.findOneAndUpdate(
-    { companyId, name },
-    { $setOnInsert: { companyId, name, ...definition, isActive: true, isSystemAccount: true } },
-    { new: true, upsert: true }
-  );
-}
-
-// ─── Helper to find Accounts Payable control account ─────────
-async function getAccountsPayable(companyId) {
-  let apAccount = await AccountHead.findOne({
-    companyId,
-    name: { $regex: "^Accounts Payable$", $options: "i" },
-    type: "Liability",
-    isActive: true
+async function writeLedger(transaction, session = null) {
+  const ids = [...new Set(transaction.lines.map((line) => String(line.accountId)))];
+  const accounts = await AccountHead.find({ _id: { $in: ids }, companyId: transaction.companyId }).select("name balanceType").session(session);
+  if (accounts.length !== ids.length) throw new Error("A journal line refers to an invalid account");
+  const accountMap = new Map(accounts.map((account) => [String(account._id), account]));
+  const entries = transaction.lines.map((line) => {
+    const account = accountMap.get(String(line.accountId));
+    const balance = account.balanceType === "Debit" ? (line.type === "Debit" ? line.amount : -line.amount) : (line.type === "Credit" ? line.amount : -line.amount);
+    return { companyId: transaction.companyId, accountId: line.accountId, accountName: line.accountName || account.name, transactionId: transaction._id, transactionNumber: transaction.transactionNumber, transactionType: transaction.type, date: transaction.date, debit: line.type === "Debit" ? line.amount : 0, credit: line.type === "Credit" ? line.amount : 0, balance, narration: transaction.narration, partyId: transaction.partyId, partyName: transaction.partyName, partyType: transaction.partyType, fiscalYear: transaction.fiscalYear };
   });
-  
-  if (!apAccount) {
-    apAccount = await AccountHead.create({
-      companyId,
-      name: "Accounts Payable",
-      type: "Liability",
-      group: "Current Liability",
-      balanceType: "Credit",
-      isSystemAccount: true
-    });
-  }
-  return apAccount;
+  await LedgerEntry.insertMany(entries, { session });
 }
 
-// ════════════════════════════════════════════════════════════
-// 1. SALES INVOICE
-// Receivable Dr ↑ (Asset)   →  Customer owes us money
-// Sales Cr      ↑ (Income)  →  We earned revenue
-// ════════════════════════════════════════════════════════════
-export async function autoSalesInvoice({
-  companyId,
-  amount,
-  partyId,
-  partyName,
-  referenceId,
-  referenceNumber,
-  narration,
-  date,
-  createdBy,
-}) {
-  if (!companyId || !amount || amount <= 0 || !partyId || !partyName || !referenceId || !createdBy) {
-    throw new Error("Missing required fields for autoSalesInvoice");
+export async function postAccountingTransaction(input) {
+  const { companyId, type, lines, referenceId, session = null } = input;
+  if (!companyId || !type || !Array.isArray(lines) || lines.length < 2) throw new Error("A transaction needs at least two journal lines");
+  const normalized = lines.map((line) => ({ ...line, amount: money(line.amount) }));
+  const debit = normalized.filter((line) => line.type === "Debit").reduce((sum, line) => sum + line.amount, 0);
+  const credit = normalized.filter((line) => line.type === "Credit").reduce((sum, line) => sum + line.amount, 0);
+  if (Math.abs(debit - credit) > 0.001) throw new Error("Journal entry is not balanced");
+  if (referenceId) {
+    const existing = await Transaction.findOne({ companyId, type, referenceId, status: "Posted" }).session(session);
+    if (existing) return existing;
   }
-
+  const { session: ignoredSession, ...document } = input;
   try {
-    const [receivable, sales] = await Promise.all([
-      findAccount(companyId, "Accounts Receivable"),
-      findAccount(companyId, "Sales Revenue"),
-    ]);
-
-    const txnNumber = await genNumber(companyId, "Sales Invoice");
-
-    const txn = await Transaction.create({
-      companyId,
-      transactionNumber: txnNumber,
-      type: "Sales Invoice",
-      date: date || new Date(),
-      totalAmount: amount,
-      lines: [
-        { accountId: receivable._id, accountName: receivable.name, type: "Debit", amount },
-        { accountId: sales._id, accountName: sales.name, type: "Credit", amount },
-      ],
-      partyType: "Customer",
-      partyId,
-      partyName,
-      referenceType: "SalesInvoice",
-      referenceId,
-      referenceNumber,
-      narration: narration || `Sales Invoice ${referenceNumber}`,
-      status: "Posted",
-      createdBy,
-    });
-
-    await postLedger(txn);
-    return txn;
+    const [transaction] = await Transaction.create([{
+      ...document,
+      transactionNumber: input.transactionNumber || await nextNumber(companyId, type, session),
+      date: input.date || new Date(), totalAmount: debit, lines: normalized, status: "Posted",
+    }], { session });
+    await writeLedger(transaction, session);
+    return transaction;
   } catch (error) {
-    console.error("autoSalesInvoice failed:", error);
-    throw new Error(`Failed to create auto sales invoice: ${error.message}`);
+    // The unique source-reference index protects concurrent requests. Returning
+    // the winner makes retries idempotent instead of creating a second journal.
+    if (error?.code === 11000 && referenceId) {
+      const existing = await Transaction.findOne({ companyId, type, referenceId, status: "Posted" }).session(session);
+      if (existing) return existing;
+    }
+    throw error;
   }
 }
 
-// ════════════════════════════════════════════════════════════
-// 2. PURCHASE INVOICE (CORRECTED - Uses Accounts Payable control account)
-// Purchase Dr  ↑ (Expense)   → We bought goods/services
-// Accounts Payable Cr ↑ (Liability) → We owe supplier (control account)
-// ════════════════════════════════════════════════════════════
-export async function autoPurchaseInvoice({
-  companyId,
-  amount,
-  partyId,
-  partyName,
-  referenceId,
-  referenceNumber,
-  narration,
-  date,
-  createdBy
-}) {
-  if (!companyId || !amount || amount <= 0 || !partyId || !partyName || !referenceId || !createdBy) {
-    throw new Error("Missing required fields for autoPurchaseInvoice");
-  }
-
-  try {
-    // ✅ Purchase expense account
-    const purchase = await findAccount(companyId, "Purchase");
-    
-    // ✅ Accounts Payable control account (NOT supplier's individual account)
-    const accountsPayable = await getAccountsPayable(companyId);
-
-    console.log(`✅ Creating purchase entry: ${amount} for ${partyName}`);
-    console.log(`   Purchase Account: ${purchase.name} (${purchase._id})`);
-    console.log(`   Payable Account: ${accountsPayable.name} (${accountsPayable._id})`);
-
-    const txnNumber = await genNumber(companyId, "Purchase Invoice");
-
-    const txn = await Transaction.create({
-      companyId,
-      transactionNumber: txnNumber,
-      type: "Purchase Invoice",
-      date: date || new Date(),
-      totalAmount: amount,
-      lines: [
-        {
-          accountId: purchase._id,
-          accountName: purchase.name,
-          type: "Debit",
-          amount
-        },
-        {
-          accountId: accountsPayable._id,
-          accountName: accountsPayable.name,
-          type: "Credit",
-          amount
-        },
-      ],
-      partyType: "Supplier",
-      partyId,
-      partyName,
-      referenceType: "PurchaseInvoice",
-      referenceId,
-      referenceNumber,
-      narration: narration || `Purchase Invoice ${referenceNumber}`,
-      status: "Posted",
-      createdBy,
-    });
-
-    await postLedger(txn);
-    console.log(`✅ Purchase invoice accounting completed: ${txn.transactionNumber}`);
-    return txn;
-  } catch (error) {
-    console.error("autoPurchaseInvoice failed:", error);
-    throw new Error(`Failed to create auto purchase invoice: ${error.message}`);
-  }
-}
-
-// ════════════════════════════════════════════════════════════
-// 3. PAYMENT ENTRY (Receiving from Customer)
-// Bank Dr          ↑ (Asset)  → Money came into bank
-// Receivable Cr    ↓ (Asset)  → Customer's balance reduced
-// ════════════════════════════════════════════════════════════
-export async function autoPaymentReceipt({ 
-  companyId, 
-  amount, 
-  partyId, 
-  partyName, 
-  bankAccountName = "Bank Account", 
-  referenceId, 
-  referenceNumber, 
-  narration, 
-  date, 
-  createdBy, 
-  paymentMode 
-}) {
-  if (!companyId || !amount || amount <= 0 || !partyId) {
-    throw new Error("Missing required fields for autoPaymentReceipt");
-  }
-
-  // ─────────────────────────────────────────────────────────────
-  // Map incoming payment mode to Transaction model's enum values
-  // Adjust this map to match your Transaction.paymentMode enum
-  // ─────────────────────────────────────────────────────────────
-  const paymentModeMap = {
-    "cash": "Cash",
-    "bank": "Bank Transfer",
-    "upi": "UPI",
-    "card": "Card",
-    "netbanking": "Net Banking",
-    "wallet": "Wallet",
-    "cheque": "Cheque"
-  };
-  const mappedPaymentMode = paymentModeMap[paymentMode] || "Bank Transfer";
-
-  const [bank, receivable] = await Promise.all([
-    findAccount(companyId, bankAccountName),
-    findAccount(companyId, "Accounts Receivable"),
+const postPartyDocument = async ({ partyType, incomeAccount, taxAccount, transactionType, referenceType, ...input }) => {
+  const total = money(input.amount);
+  const taxAmount = Math.round(Number(input.taxAmount || 0) * 100) / 100;
+  if (taxAmount < 0 || taxAmount - total > 0.001) throw new Error("Tax amount must be between zero and the document total");
+  const [party, income, tax] = await Promise.all([
+    partyAccount(input.companyId, partyType, input.partyId, input.session),
+    systemAccount(input.companyId, incomeAccount, input.session),
+    taxAmount > 0 ? systemAccount(input.companyId, taxAccount, input.session) : null,
   ]);
-
-  const txnNumber = await genNumber(companyId, "Receipt");
-  const txn = await Transaction.create({
-    companyId, 
-    transactionNumber: txnNumber,
-    type: "Receipt",
-    date: date || new Date(),
-    totalAmount: amount,
-    lines: [
-      { accountId: bank._id,       accountName: bank.name,       type: "Debit",  amount },
-      { accountId: receivable._id, accountName: receivable.name, type: "Credit", amount },
-    ],
-    partyType: "Customer", 
-    partyId, 
-    partyName: partyName || "Customer",
-    paymentMode: mappedPaymentMode,   // ✅ now uses mapped value
-    bankAccountId: bank._id,
-    referenceType: "Manual", 
-    referenceId, 
-    referenceNumber,
-    narration: narration || `Payment received from ${partyName || "Customer"}`,
-    status: "Posted", 
-    createdBy,
-  });
-  await postLedger(txn);
-  return txn;
-}
-
-// ════════════════════════════════════════════════════════════
-// 4. PAYMENT TO SUPPLIER (CORRECTED - Uses Accounts Payable)
-// Accounts Payable Dr ↓ (Liability) → Supplier balance reduced
-// Bank Cr             ↓ (Asset)     → Money went out of bank
-// ════════════════════════════════════════════════════════════
-export async function autoPaymentPaid({
-  companyId,
-  amount,
-  partyId,
-  partyName,
-  bankAccountName = "Bank Account",
-  referenceId,
-  referenceNumber,
-  narration,
-  date,
-  createdBy,
-  paymentMode
-}) {
-  if (!companyId || !amount || amount <= 0 || !partyId) {
-    throw new Error("Missing required fields for autoPaymentPaid");
+  const partyLineType = partyType === "Customer" ? "Debit" : "Credit";
+  const incomeLineType = partyLineType === "Debit" ? "Credit" : "Debit";
+  const lines = [{ accountId: party._id, accountName: party.name, type: partyLineType, amount: total }];
+  if (total - taxAmount > 0.001) {
+    lines.push({ accountId: income._id, accountName: income.name, type: incomeLineType, amount: total - taxAmount });
   }
+  if (taxAmount > 0) lines.push({ accountId: tax._id, accountName: tax.name, type: incomeLineType, amount: taxAmount });
+  return postAccountingTransaction({ ...input, type: transactionType, partyType, referenceType, lines });
+};
+export const autoSalesInvoice = (input) => postPartyDocument({ ...input, partyType: "Customer", incomeAccount: "Sales Revenue", taxAccount: "Output GST Payable", transactionType: "Sales Invoice", referenceType: "SalesInvoice", narration: input.narration || `Sales invoice ${input.referenceNumber}` });
+export const autoPurchaseInvoice = (input) => postPartyDocument({ ...input, partyType: "Supplier", incomeAccount: input.fromGRN ? "Goods Received Not Invoiced" : "Purchase", taxAccount: "Input GST Credit", transactionType: "Purchase Invoice", referenceType: "PurchaseInvoice", narration: input.narration || `Purchase invoice ${input.referenceNumber}` });
 
-  try {
-    const [bank, accountsPayable] = await Promise.all([
-      findAccount(companyId, bankAccountName),
-      getAccountsPayable(companyId),
-    ]);
-
-    console.log(`✅ Creating payment entry: ${amount} to ${partyName}`);
-    console.log(`   Payable Account: ${accountsPayable.name} (${accountsPayable._id})`);
-    console.log(`   Bank Account: ${bank.name} (${bank._id})`);
-
-    const txnNumber = await genNumber(companyId, "Payment");
-
-    const txn = await Transaction.create({
-      companyId,
-      transactionNumber: txnNumber,
-      type: "Payment",
-      date: date || new Date(),
-      totalAmount: amount,
-      lines: [
-        {
-          accountId: accountsPayable._id,
-          accountName: accountsPayable.name,
-          type: "Debit",
-          amount
-        },
-        {
-          accountId: bank._id,
-          accountName: bank.name,
-          type: "Credit",
-          amount
-        }
-      ],
-      partyType: "Supplier",
-      partyId,
-      partyName: partyName || "Supplier",
-      paymentMode: paymentMode || "Bank Transfer",
-      bankAccountId: bank._id,
-      referenceType: "Manual",
-      referenceId,
-      referenceNumber,
-      narration: narration || `Payment made to ${partyName || "Supplier"}`,
-      status: "Posted",
-      createdBy,
-    });
-
-    await postLedger(txn);
-    console.log(`✅ Payment accounting completed: ${txn.transactionNumber}`);
-    return txn;
-  } catch (error) {
-    console.error("autoPaymentPaid failed:", error);
-    throw new Error(`Failed to create auto payment: ${error.message}`);
-  }
+async function postPayment(input, partyType) {
+  const [party, bank] = await Promise.all([partyAccount(input.companyId, partyType, input.partyId, input.session), paymentAccount(input.companyId, input.bankAccountId, input.bankAccountName, input.session)]);
+  const isReceipt = partyType === "Customer";
+  const modeMap = { cash: "Cash", bank: "Bank Transfer", netbanking: "Bank Transfer", upi: "UPI", card: "Card", cheque: "Cheque", wallet: "Other" };
+  const paymentMode = modeMap[String(input.paymentMode || "").toLowerCase()] || input.paymentMode || "Bank Transfer";
+  return postAccountingTransaction({ ...input, paymentMode, type: isReceipt ? "Receipt" : "Payment", partyType, bankAccountId: bank._id, referenceType: "Manual", narration: input.narration || `${isReceipt ? "Receipt from" : "Payment to"} ${input.partyName}`, lines: [{ accountId: isReceipt ? bank._id : party._id, accountName: isReceipt ? bank.name : party.name, type: "Debit", amount: input.amount }, { accountId: isReceipt ? party._id : bank._id, accountName: isReceipt ? party.name : bank.name, type: "Credit", amount: input.amount }] });
 }
-
-export async function autoCreditNote({ companyId, amount, partyId, partyName, referenceId, referenceNumber, narration, date, createdBy }) {
-  if (!companyId || !amount || amount <= 0 || !partyId || !referenceId || !createdBy) throw new Error("Missing required fields for autoCreditNote");
-  const existing = await Transaction.findOne({ companyId, type: "Credit Note", referenceId, status: "Posted" });
-  if (existing) return existing;
-  const [salesReturns, receivable] = await Promise.all([findAccount(companyId, "Sales Returns"), findAccount(companyId, "Accounts Receivable")]);
-  const txn = await Transaction.create({
-    companyId, transactionNumber: await genNumber(companyId, "Credit Note"), type: "Credit Note", date: date || new Date(), totalAmount: amount,
-    lines: [{ accountId: salesReturns._id, accountName: salesReturns.name, type: "Debit", amount }, { accountId: receivable._id, accountName: receivable.name, type: "Credit", amount }],
-    partyType: "Customer", partyId, partyName: partyName || "Customer", referenceType: "CreditNote", referenceId, referenceNumber,
-    narration: narration || `Credit Note ${referenceNumber}`, status: "Posted", createdBy,
-  });
-  await postLedger(txn);
-  return txn;
-}
-
-export async function autoDebitNote({ companyId, amount, partyId, partyName, referenceId, referenceNumber, narration, date, createdBy }) {
-  if (!companyId || !amount || amount <= 0 || !partyId || !referenceId || !createdBy) throw new Error("Missing required fields for autoDebitNote");
-  const existing = await Transaction.findOne({ companyId, type: "Debit Note", referenceId, status: "Posted" });
-  if (existing) return existing;
-  const [payable, purchaseReturns] = await Promise.all([getAccountsPayable(companyId), findAccount(companyId, "Purchase Returns")]);
-  const txn = await Transaction.create({
-    companyId, transactionNumber: await genNumber(companyId, "Debit Note"), type: "Debit Note", date: date || new Date(), totalAmount: amount,
-    lines: [{ accountId: payable._id, accountName: payable.name, type: "Debit", amount }, { accountId: purchaseReturns._id, accountName: purchaseReturns.name, type: "Credit", amount }],
-    partyType: "Supplier", partyId, partyName: partyName || "Supplier", referenceType: "DebitNote", referenceId, referenceNumber,
-    narration: narration || `Debit Note ${referenceNumber}`, status: "Posted", createdBy,
-  });
-  await postLedger(txn);
-  return txn;
-}
-
-// ════════════════════════════════════════════════════════════
-// 5. PAYROLL MARK PAID
-// Salary Expense Dr ↑ (Expense) → Cost to company
-// Bank Cr           ↓ (Asset)   → Money went out of bank
-// ════════════════════════════════════════════════════════════
-export async function autoPayrollPaid({ 
-  companyId, 
-  amount, 
-  employeeId, 
-  employeeName, 
-  payrollId, 
-  month, 
-  bankAccountName = "Bank Account", 
-  createdBy 
-}) {
-  if (!companyId || !amount || amount <= 0 || !employeeId || !payrollId) {
-    throw new Error("Missing required fields for autoPayrollPaid");
-  }
-
-  const [salaryExp, bank] = await Promise.all([
-    findAccount(companyId, "Salary Expense"),
-    findAccount(companyId, bankAccountName),
-  ]);
-
-  const txnNumber = await genNumber(companyId, "Journal Entry");
-  const txn = await Transaction.create({
-    companyId, 
-    transactionNumber: txnNumber,
-    type: "Journal Entry",
-    date: new Date(),
-    totalAmount: amount,
-    lines: [
-      { accountId: salaryExp._id, accountName: salaryExp.name, type: "Debit",  amount },
-      { accountId: bank._id,      accountName: bank.name,      type: "Credit", amount },
-    ],
-    partyType: "Employee", 
-    partyId: employeeId, 
-    partyName: employeeName || "Employee",
-    referenceType: "Payroll", 
-    referenceId: payrollId, 
-    referenceNumber: month,
-    narration: `Salary paid to ${employeeName || "Employee"} for ${month}`,
-    status: "Posted", 
-    createdBy,
-  });
-  await postLedger(txn);
-  return txn;
-}
-
-// ════════════════════════════════════════════════════════════
-// 6. GRN (Goods Received Note)
-// Inventory Dr  ↑ (Asset)     → Stock increased
-// Accounts Payable Cr ↑ (Liability) → We owe supplier (control account)
-// ════════════════════════════════════════════════════════════
-export async function autoGRN({ 
-  companyId, 
-  amount, 
-  partyId, 
-  partyName, 
-  referenceId, 
-  referenceNumber, 
-  narration, 
-  date, 
-  createdBy 
-}) {
-  if (!companyId || !amount || amount <= 0 || !partyId || !referenceId) {
-    throw new Error("Missing required fields for autoGRN");
-  }
-
-  const [inventory, accountsPayable] = await Promise.all([
-    findAccount(companyId, "Inventory / Stock"),
-    getAccountsPayable(companyId),
-  ]);
-
-  const txnNumber = await genNumber(companyId, "Journal Entry");
-  const txn = await Transaction.create({
-    companyId, 
-    transactionNumber: txnNumber,
-    type: "Journal Entry",
-    date: date || new Date(),
-    totalAmount: amount,
-    lines: [
-      { accountId: inventory._id, accountName: inventory.name, type: "Debit",  amount },
-      { accountId: accountsPayable._id, accountName: accountsPayable.name, type: "Credit", amount },
-    ],
-    partyType: "Supplier", 
-    partyId, 
-    partyName: partyName || "Supplier",
-    referenceType: "Manual", 
-    referenceId, 
-    referenceNumber,
-    narration: narration || `GRN ${referenceNumber} from ${partyName || "Supplier"}`,
-    status: "Posted", 
-    createdBy,
-  });
-  await postLedger(txn);
-  return txn;
-}
-
-// ════════════════════════════════════════════════════════════
-// 7. ALIAS for autoPaymentEntry (to match import in purchase invoice route)
-// ════════════════════════════════════════════════════════════
+export const autoPaymentReceipt = (input) => postPayment(input, "Customer");
+export const autoPaymentPaid = (input) => postPayment(input, "Supplier");
 export const autoPaymentEntry = autoPaymentPaid;
 
+// Financial documents must never be physically removed once posted. This
+// creates equal-and-opposite entries while retaining the original posting, so
+// every report that includes posted journals has a zero net effect and a full
+// audit trail.
+export async function reversePostedTransactions({ companyId, referenceIds, createdBy, date = new Date(), narration, session = null }) {
+  const ids = (referenceIds || []).filter(Boolean);
+  if (!ids.length) return [];
+  const originals = await Transaction.find({ companyId, referenceId: { $in: ids }, status: "Posted" }).session(session);
+  const reversals = [];
+  for (const original of originals) {
+    const reversal = await postAccountingTransaction({
+      companyId,
+      type: original.type,
+      referenceType: original.referenceType,
+      // A new source id avoids colliding with the original journal's
+      // idempotency key. reversalOf preserves the audit relationship.
+      referenceId: new mongoose.Types.ObjectId(),
+      referenceNumber: original.referenceNumber,
+      partyType: original.partyType,
+      partyId: original.partyId,
+      partyName: original.partyName,
+      paymentMode: original.paymentMode,
+      bankAccountId: original.bankAccountId,
+      chequeNumber: original.chequeNumber,
+      chequeDate: original.chequeDate,
+      utrNumber: original.utrNumber,
+      reversalOf: original._id,
+      isReversal: true,
+      createdBy,
+      date,
+      narration: narration || `Reversal of ${original.transactionNumber}`,
+      lines: original.lines.map((line) => ({
+        accountId: line.accountId,
+        accountName: line.accountName,
+        type: line.type === "Debit" ? "Credit" : "Debit",
+        amount: line.amount,
+      })),
+      session,
+    });
+    reversals.push(reversal);
+  }
+  return reversals;
+}
 
+export async function autoGRN(input) {
+  const total = money(input.amount);
+  const taxAmount = Math.round(Number(input.taxAmount || 0) * 100) / 100;
+  if (taxAmount < 0 || taxAmount - total > 0.001) throw new Error("GRN tax amount must be between zero and the document total");
+  const value = total - taxAmount;
+  if (value <= 0.001) return null;
+  const [inventory, clearing] = await Promise.all([
+    systemAccount(input.companyId, "Inventory / Stock", input.session),
+    systemAccount(input.companyId, "Goods Received Not Invoiced", input.session),
+  ]);
+  return postAccountingTransaction({ ...input, amount: value, type: "Journal Entry", partyType: "Supplier", referenceType: "Manual", narration: input.narration || `Goods received ${input.referenceNumber || ""}`, lines: [{ accountId: inventory._id, accountName: inventory.name, type: "Debit", amount: value }, { accountId: clearing._id, accountName: clearing.name, type: "Credit", amount: value }] });
+}
 
+export async function autoPayrollPaid({ companyId, amount, employeeId, employeeName, payrollId, month, bankAccountId, bankAccountName, createdBy }) {
+  const [salary, bank] = await Promise.all([systemAccount(companyId, "Salary Expense"), paymentAccount(companyId, bankAccountId, bankAccountName)]);
+  return postAccountingTransaction({ companyId, type: "Journal Entry", createdBy, partyType: "Employee", partyId: employeeId, partyName: employeeName, referenceType: "Payroll", referenceId: payrollId, referenceNumber: month, narration: `Salary paid to ${employeeName || "employee"} for ${month}`, lines: [{ accountId: salary._id, accountName: salary.name, type: "Debit", amount }, { accountId: bank._id, accountName: bank.name, type: "Credit", amount }] });
+}
 
-// // 📁 src/lib/autoTransaction.js
-// // ✅ Auto create accounting entries when modules fire events
-// // Import this helper in: Sales Invoice, Purchase Invoice, Payment Entry, Payroll, GRN
-
-// import Transaction from "@/models/accounts/Transaction";
-// import LedgerEntry from "@/models/accounts/LedgerEntry";
-// import AccountHead from "@/models/accounts/AccountHead";
-// import Supplier from "@/models/SupplierModels";
-// import dbConnect from "@/lib/db";
-
-// // ─── Get running balance for an account ─────────────────────
-// async function getBalance(companyId, accountId) {
-//   const last = await LedgerEntry.findOne(
-//     { companyId, accountId },
-//     { balance: 1 },
-//     { sort: { date: -1, createdAt: -1 } }
-//   );
-//   return last?.balance || 0;
-// }
-
-// // ─── Post ledger entries after a transaction ─────────────────
-// async function postLedger(transaction) {
-//   const entries = [];
-//   for (const line of transaction.lines) {
-//     const prev    = await getBalance(transaction.companyId, line.accountId);
-//     const account = await AccountHead.findById(line.accountId);
-//     const isDebitNormal = account?.balanceType === "Debit";
-//     const newBal = isDebitNormal
-//       ? prev + (line.type === "Debit" ? line.amount : -line.amount)
-//       : prev + (line.type === "Credit" ? line.amount : -line.amount);
-
-//     entries.push({
-//       companyId:         transaction.companyId,
-//       accountId:         line.accountId,
-//       accountName:       line.accountName || account?.name,
-//       transactionId:     transaction._id,
-//       transactionNumber: transaction.transactionNumber,
-//       transactionType:   transaction.type,
-//       date:              transaction.date,
-//       debit:             line.type === "Debit"  ? line.amount : 0,
-//       credit:            line.type === "Credit" ? line.amount : 0,
-//       balance:           newBal,
-//       narration:         transaction.narration,
-//       partyName:         transaction.partyName,
-//       partyType:         transaction.partyType,
-//       fiscalYear:        transaction.fiscalYear,
-//     });
-//   }
-//   await LedgerEntry.insertMany(entries);
-// }
-
-// // ─── Auto number generator ────────────────────────────────────
-// async function genNumber(companyId, type) {
-//   const map = { "Sales Invoice":"SI","Purchase Invoice":"PI","Payment":"PAY","Receipt":"REC","Journal Entry":"JE","Contra":"CTR" };
-//   const prefix = map[type] || "TXN";
-//   const count  = await Transaction.countDocuments({ companyId, type }) + 1;
-//   return `${prefix}-${new Date().getFullYear()}-${String(count).padStart(4,"0")}`;
-// }
-
-// // ─── Helper to find system account by name ───────────────────
-// async function findAccount(companyId, name) {
-//   const acc = await AccountHead.findOne({ companyId, name, isActive: true });
-//   if (!acc) throw new Error(`Account not found: "${name}". Please create it in Chart of Accounts.`);
-//   return acc;
-// }
-
-// // ════════════════════════════════════════════════════════════
-// // 1. SALES INVOICE
-// // Receivable Dr ↑ (Asset)   →  Customer owes us money
-// // Sales Cr      ↑ (Income)  →  We earned revenue
-// // ════════════════════════════════════════════════════════════
-// export async function autoSalesInvoice({
-//   companyId,
-//   amount,
-//   partyId,
-//   partyName,
-//   referenceId,
-//   referenceNumber,
-//   narration,
-//   date,
-//   createdBy,
-// }) {
-//   // 1. Validate required fields
-//   if (!companyId || !amount || amount <= 0 || !partyId || !partyName || !referenceId || !createdBy) {
-//     throw new Error("Missing required fields for autoSalesInvoice");
-//   }
-
-//   try {
-//     // 2. Find or create required accounts (Receivable & Sales Revenue)
-//     const [receivable, sales] = await Promise.all([
-//       findAccount(companyId, "Accounts Receivable"),
-//       findAccount(companyId, "Sales Revenue"),
-//     ]);
-
-//     if (!receivable || !sales) {
-//       throw new Error("Required accounts (Accounts Receivable / Sales Revenue) not found");
-//     }
-
-//     // 3. Generate transaction number
-//     const txnNumber = await genNumber(companyId, "Sales Invoice");
-
-//     // 4. Create transaction
-//     const txn = await Transaction.create({
-//       companyId,
-//       transactionNumber: txnNumber,
-//       type: "Sales Invoice",
-//       date: date,
-//       totalAmount: amount,
-//       lines: [
-//         { accountId: receivable._id, accountName: receivable.name, type: "Debit", amount },
-//         { accountId: sales._id, accountName: sales.name, type: "Credit", amount },
-//       ],
-//       partyType: "Customer",
-//       partyId,
-//       partyName,
-//       referenceType: "SalesInvoice",
-//       referenceId,
-//       referenceNumber,
-//       narration: narration || `Sales Invoice ${referenceNumber}`,
-//       status: "Posted",
-//       createdBy,
-//     });
-
-//     // 5. Post to ledger (await the promise)
-//     await postLedger(txn);
-
-//     return txn;
-//   } catch (error) {
-//     console.error("autoSalesInvoice failed:", error);
-//     throw new Error(`Failed to create auto sales invoice: ${error.message}`);
-//   }
-// }
-
-// // ════════════════════════════════════════════════════════════
-// // 2. PURCHASE INVOICE
-// // Purchase Dr  ↑ (Expense)   → We bought goods/services
-// // Payable Cr   ↑ (Liability) → We owe supplier money
-// // ════════════════════════════════════════════════════════════
-// export async function autoPurchaseInvoice({
-//   companyId,
-//   amount,
-//   partyId,
-//   partyName,
-//   referenceId,
-//   referenceNumber,
-//   narration,
-//   date,
-//   createdBy
-// }) {
-//   // ✅ Purchase account (same)
-//   const purchase = await findAccount(companyId, "Purchase");
-
-//   // 🔥 Get supplier account
-//   const supplier = await Supplier.findById(partyId);
-
-//   if (!supplier || !supplier.glAccount) {
-//     throw new Error("Supplier account not linked");
-//   }
-
-//   const payable = await AccountHead.findById(supplier.glAccount);
-
-//   // ✅ Create transaction
-//   const txnNumber = await genNumber(companyId, "Purchase Invoice");
-
-//   const txn = await Transaction.create({
-//     companyId,
-//     transactionNumber: txnNumber,
-//     type: "Purchase Invoice",
-//     date: date,
-//     totalAmount: amount,
-
-//     lines: [
-//       {
-//         accountId: purchase._id,
-//         accountName: purchase.name,
-//         type: "Debit",
-//         amount
-//       },
-//       {
-//         accountId: payable._id,   // 🔥 supplier account
-//         accountName: payable.name,
-//         type: "Credit",
-//         amount
-//       },
-//     ],
-
-//     partyType: "Supplier",
-//     partyId,
-//     partyName,
-
-//     referenceType: "PurchaseInvoice",
-//     referenceId,
-//     referenceNumber,
-
-//     narration: narration || `Purchase Invoice ${referenceNumber}`,
-//     status: "Posted",
-//     createdBy,
-//   });
-
-//   await postLedger(txn);
-//   return txn;
-// }
-
-// // ════════════════════════════════════════════════════════════
-// // 3. PAYMENT ENTRY (Receiving from Customer)
-// // Bank Dr          ↑ (Asset)  → Money came into bank
-// // Receivable Cr    ↓ (Asset)  → Customer's balance reduced
-// // ════════════════════════════════════════════════════════════
-// export async function autoPaymentReceipt({ companyId, amount, partyId, partyName, bankAccountName = "Bank Account", referenceId, referenceNumber, narration, date, createdBy, paymentMode }) {
-//   const [bank, receivable] = await Promise.all([
-//     findAccount(companyId, bankAccountName),
-//     findAccount(companyId, "Accounts Receivable"),
-//   ]);
-
-//   const txnNumber = await genNumber(companyId, "Receipt");
-//   const txn = await Transaction.create({
-//     companyId, transactionNumber: txnNumber,
-//     type: "Receipt",
-//     date: date || new Date(),
-//     totalAmount: amount,
-//     lines: [
-//       { accountId: bank._id,       accountName: bank.name,       type: "Debit",  amount },
-//       { accountId: receivable._id, accountName: receivable.name, type: "Credit", amount },
-//     ],
-//     partyType: "Customer", partyId, partyName,
-//     paymentMode: paymentMode || "Bank Transfer",
-//     bankAccountId: bank._id,
-//     referenceType: "Manual", referenceId, referenceNumber,
-//     narration: narration || `Payment received from ${partyName}`,
-//     status: "Posted", createdBy,
-//   });
-//   await postLedger(txn);
-//   return txn;
-// }
-
-// // ════════════════════════════════════════════════════════════
-// // 4. PAYROLL MARK PAID
-// // Salary Expense Dr ↑ (Expense) → Cost to company
-// // Bank Cr           ↓ (Asset)   → Money went out of bank
-// // ════════════════════════════════════════════════════════════
-// export async function autoPayrollPaid({ companyId, amount, employeeId, employeeName, payrollId, month, bankAccountName = "Bank Account", createdBy }) {
-//   const [salaryExp, bank] = await Promise.all([
-//     findAccount(companyId, "Salary Expense"),
-//     findAccount(companyId, bankAccountName),
-//   ]);
-
-//   const txnNumber = await genNumber(companyId, "Journal Entry");
-//   const txn = await Transaction.create({
-//     companyId, transactionNumber: txnNumber,
-//     type: "Journal Entry",
-//     date: new Date(),
-//     totalAmount: amount,
-//     lines: [
-//       { accountId: salaryExp._id, accountName: salaryExp.name, type: "Debit",  amount },
-//       { accountId: bank._id,      accountName: bank.name,      type: "Credit", amount },
-//     ],
-//     partyType: "Employee", partyId: employeeId, partyName: employeeName,
-//     referenceType: "Payroll", referenceId: payrollId, referenceNumber: month,
-//     narration: `Salary paid to ${employeeName} for ${month}`,
-//     status: "Posted", createdBy,
-//   });
-//   await postLedger(txn);
-//   return txn;
-// }
-
-// // ════════════════════════════════════════════════════════════
-// // 5. GRN (Goods Received Note)
-// // Inventory Dr  ↑ (Asset)     → Stock increased
-// // Payable Cr    ↑ (Liability) → We owe supplier
-// // ════════════════════════════════════════════════════════════
-// export async function autoGRN({ companyId, amount, partyId, partyName, referenceId, referenceNumber, narration, date, createdBy }) {
-//   const [inventory, payable] = await Promise.all([
-//     findAccount(companyId, "Inventory / Stock"),
-//     findAccount(companyId, "Accounts Payable"),
-//   ]);
-
-//   const txnNumber = await genNumber(companyId, "Journal Entry");
-//   const txn = await Transaction.create({
-//     companyId, transactionNumber: txnNumber,
-//     type: "Journal Entry",
-//     date: date || new Date(),
-//     totalAmount: amount,
-//     lines: [
-//       { accountId: inventory._id, accountName: inventory.name, type: "Debit",  amount },
-//       { accountId: payable._id,   accountName: payable.name,   type: "Credit", amount },
-//     ],
-//     partyType: "Supplier", partyId, partyName,
-//     referenceType: "Manual", referenceId, referenceNumber,
-//     narration: narration || `GRN ${referenceNumber} from ${partyName}`,
-//     status: "Posted", createdBy,
-//   });
-//   await postLedger(txn);
-//   return txn;
-// }
-
-
-// // 4. PAYMENT (Supplier ko paisa diya)
-// export async function autoPaymentPaid({
-//   companyId,
-//   amount,
-//   partyId,
-//   partyName,
-//   bankAccountName = "Bank Account",
-//   referenceId,
-//   referenceNumber,
-//   narration,
-//   date,
-//   createdBy,
-//   paymentMode
-// }) {
-//   const [bank, payable] = await Promise.all([
-//     findAccount(companyId, bankAccountName),
-//     findAccount(companyId, "Accounts Payable"),
-//   ]);
-
-//   const txnNumber = await genNumber(companyId, "Payment");
-
-//   const txn = await Transaction.create({
-//     companyId,
-//     transactionNumber: txnNumber,
-//     type: "Payment",
-//     date: date || new Date(),
-//     totalAmount: amount,
-
-//     lines: [
-//       {
-//         accountId: payable._id,
-//         accountName: payable.name,
-//         type: "Debit",
-//         amount
-//       },
-//       {
-//         accountId: bank._id,
-//         accountName: bank.name,
-//         type: "Credit",
-//         amount
-//       }
-//     ],
-
-//     partyType: "Supplier",
-//     partyId,
-//     partyName,
-
-//     paymentMode: paymentMode || "Bank Transfer",
-//     bankAccountId: bank._id,
-
-//     referenceType: "Manual",
-//     referenceId,
-//     referenceNumber,
-
-//     narration: narration || `Payment made to ${partyName}`,
-//     status: "Posted",
-//     createdBy,
-//   });
-
-//   await postLedger(txn);
-//   return txn;
-// }
+export async function autoCreditNote(input) {
+  const [customer, returns] = await Promise.all([partyAccount(input.companyId, "Customer", input.partyId), systemAccount(input.companyId, "Sales Returns")]);
+  return postAccountingTransaction({ ...input, type: "Credit Note", partyType: "Customer", referenceType: "CreditNote", lines: [{ accountId: returns._id, accountName: returns.name, type: "Debit", amount: input.amount }, { accountId: customer._id, accountName: customer.name, type: "Credit", amount: input.amount }] });
+}
+export const autoDebitNote = (input) => postPartyDocument({ ...input, partyType: "Supplier", incomeAccount: "Purchase Returns", transactionType: "Debit Note", referenceType: "DebitNote", reversal: true });

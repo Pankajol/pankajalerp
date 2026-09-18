@@ -5,7 +5,7 @@ import { Readable } from "stream";
 import dbConnect from "@/lib/db";
 import Delivery from "@/models/deliveryModels";
 import { getTokenFromHeader, verifyJWT } from "@/lib/auth";
-import { v2 as cloudinary } from "cloudinary";
+import cloudinary from "@/lib/cloudinary";
 
 export const config = { api: { bodyParser: false } };
 

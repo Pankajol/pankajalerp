@@ -3,6 +3,7 @@ import dbConnect from "@/lib/db.js";
 import Customer from "@/models/CustomerModel";
 import BankHead from "@/models/BankHead";
 import { getTokenFromHeader, verifyJWT } from "@/lib/auth";
+import { initialisePartyCodeSeries, reservePartyCode, normaliseManualPartyCode, isValidManualPartyCode, registerManualPartyCode } from "@/lib/partyCodeSeries";
 
 export async function POST(req) {
   await dbConnect();
@@ -33,13 +34,17 @@ export async function POST(req) {
     let createdCount = 0;
     let updatedCount = 0;
     let skippedCount = 0;
+    const batchCodes = new Set();
+
+    await initialisePartyCodeSeries({
+      Model: Customer,
+      companyId,
+      field: "customerCode",
+      prefix: "CUST",
+      counterId: "customerCodeSeries",
+    });
 
     // ✅ 3️⃣ Find last customer code
-    const last = await Customer.findOne({ companyId }).sort({ createdAt: -1 });
-    let nextCodeNumber = last
-      ? parseInt(last.customerCode?.split("-")[1] || "0", 10) + 1
-      : 1;
-
     // ✅ 4️⃣ Preload BankHeads for GL Account matching
     const bankHeads = await BankHead.find({ companyId }).select("_id accountName");
     const bankMap = {};
@@ -139,8 +144,29 @@ export async function POST(req) {
         });
       } else {
         // ✅ Create new record
-        const customerCode = `CUST-${nextCodeNumber.toString().padStart(4, "0")}`;
-        nextCodeNumber++;
+        const suppliedCode = normaliseManualPartyCode(row.customerCode);
+        if (suppliedCode && !isValidManualPartyCode(suppliedCode)) {
+          skippedCount++;
+          results.push({ row: i + 1, success: false, errors: ["customerCode must contain only letters, numbers, hyphens, or underscores"] });
+          continue;
+        }
+        if (suppliedCode && batchCodes.has(suppliedCode)) {
+          skippedCount++;
+          results.push({ row: i + 1, success: false, errors: [`customerCode ${suppliedCode} is repeated in this upload`] });
+          continue;
+        }
+        if (suppliedCode && await Customer.exists({ companyId, customerCode: suppliedCode })) {
+          skippedCount++;
+          results.push({ row: i + 1, success: false, errors: [`customerCode ${suppliedCode} already exists`] });
+          continue;
+        }
+        const customerCode = suppliedCode || await reservePartyCode({
+          companyId, prefix: "CUST", counterId: "customerCodeSeries",
+        });
+        if (suppliedCode) await registerManualPartyCode({
+          companyId, code: customerCode, prefix: "CUST", counterId: "customerCodeSeries",
+        });
+        batchCodes.add(customerCode);
         customerData.customerCode = customerCode;
 
         await Customer.create(customerData);
@@ -149,6 +175,7 @@ export async function POST(req) {
           row: i + 1,
           success: true,
           action: "created",
+          code: customerCode,
           warnings,
         });
       }

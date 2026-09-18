@@ -57,13 +57,22 @@ export async function GET(req, context) {
     // Calculate summary from all entries (not paginated)
     const allEntries = await LedgerEntry.find(filter).sort({ date: 1, createdAt: 1 });
     
-    const openingBalance = allEntries[0]?.balance
-      ? allEntries[0].balance - allEntries[0].debit + allEntries[0].credit
-      : account.openingBalance || 0;
+    const openingBalance = account.openingBalance || 0;
     
     const totalDebit   = allEntries.reduce((s, e) => s + e.debit, 0);
     const totalCredit  = allEntries.reduce((s, e) => s + e.credit, 0);
-    const closingBalance = allEntries.at(-1)?.balance ?? openingBalance;
+    const movement = account.balanceType === "Debit"
+      ? totalDebit - totalCredit
+      : totalCredit - totalDebit;
+    const closingBalance = openingBalance + movement;
+    let runningBalance = openingBalance;
+    const balanceByEntryId = new Map();
+    for (const entry of allEntries) {
+      runningBalance += account.balanceType === "Debit"
+        ? entry.debit - entry.credit
+        : entry.credit - entry.debit;
+      balanceByEntryId.set(String(entry._id), runningBalance);
+    }
 
     // Format entries for response
     const formattedEntries = entries.map(entry => ({
@@ -74,7 +83,7 @@ export async function GET(req, context) {
       narration: entry.narration,
       debit: entry.debit,
       credit: entry.credit,
-      balance: entry.balance,
+      balance: balanceByEntryId.get(String(entry._id)),
       transaction: entry.transactionId ? {
         _id: entry.transactionId._id,
         number: entry.transactionId.transactionNumber,

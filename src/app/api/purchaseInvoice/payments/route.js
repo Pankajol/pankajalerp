@@ -2,125 +2,116 @@ import { NextResponse } from "next/server";
 import mongoose from "mongoose";
 import dbConnect from "@/lib/db";
 import PurchaseInvoice from "@/models/InvoiceModel";
+import Payment from "@/models/Payment";
+import AccountHead from "@/models/accounts/AccountHead";
 import { getTokenFromHeader, verifyJWT } from "@/lib/auth";
-import { autoPaymentEntry } from "@/lib/autoTransaction"; // you'll create this
+import { autoPaymentEntry } from "@/lib/autoTransaction";
+
+const roundMoney = (value) => Math.round(Number(value || 0) * 100) / 100;
+const modeMap = { cash: "Cash", bank: "Bank Transfer", netbanking: "Bank Transfer", upi: "UPI", card: "Card", cheque: "Cheque", wallet: "Other" };
+const fallbackAccount = (method) => method === "cash" ? ["Cash in Hand", "Cash"] : ["upi", "card", "netbanking", "wallet"].includes(method) ? ["Digital Payments", "Current Asset"] : ["Bank Account", "Bank Account"];
+
+async function resolvePaymentAccount(companyId, bankAccountId, method, session) {
+  if (bankAccountId) {
+    const account = await AccountHead.findOne({ _id: bankAccountId, companyId, type: "Asset", isActive: true }).session(session);
+    if (!account) throw new Error("Selected cash/bank account is unavailable");
+    return account;
+  }
+  const [name, group] = fallbackAccount(method);
+  return AccountHead.findOneAndUpdate(
+    { companyId, name },
+    { $setOnInsert: { companyId, name, type: "Asset", group, balanceType: "Debit", isActive: true, isSystemAccount: true } },
+    { upsert: true, new: true, session }
+  );
+}
 
 export async function POST(req) {
   await dbConnect();
   const session = await mongoose.startSession();
-  session.startTransaction();
-
   try {
     const token = getTokenFromHeader(req);
-    if (!token) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    const decoded = verifyJWT(token);
-    if (!decoded?.companyId) return NextResponse.json({ error: "Invalid token" }, { status: 403 });
+    if (!token) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    const user = verifyJWT(token);
+    if (!user?.companyId) return NextResponse.json({ success: false, error: "Invalid token" }, { status: 403 });
 
-    const { invoiceId, amount, paymentDate, paymentMethod, referenceNo, remarks } = await req.json();
-
-    if (!invoiceId || !amount || amount <= 0) {
-      return NextResponse.json({ error: "Invalid payment data" }, { status: 400 });
+    const { invoiceId, amount, paymentDate, paymentMethod = "bank", bankAccountId, referenceNo, remarks } = await req.json();
+    if (!mongoose.Types.ObjectId.isValid(invoiceId) || !(Number(amount) > 0)) {
+      return NextResponse.json({ success: false, error: "Valid invoice and positive payment amount are required" }, { status: 400 });
     }
+    const method = String(paymentMethod).toLowerCase();
+    if (!Object.hasOwn(modeMap, method)) return NextResponse.json({ success: false, error: "Unsupported payment method" }, { status: 400 });
 
-    // Find invoice
-    const invoice = await PurchaseInvoice.findById(invoiceId).session(session);
-    if (!invoice) {
-      return NextResponse.json({ error: "Invoice not found" }, { status: 404 });
-    }
-    if (invoice.companyId.toString() !== decoded.companyId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
-    }
+    let result;
+    await session.withTransaction(async () => {
+      const invoice = await PurchaseInvoice.findOne({ _id: invoiceId, companyId: user.companyId }).session(session);
+      if (!invoice) throw new Error("Invoice not found");
+      if (invoice.status !== "posted") throw new Error("Only posted purchase invoices can be paid");
 
-    // Calculate new amounts
-    const newPaidAmount = (invoice.paidAmount || 0) + amount;
-    const newRemainingAmount = (invoice.grandTotal || 0) - newPaidAmount;
-    let paymentStatus = "Pending";
-    if (newRemainingAmount <= 0) paymentStatus = "Paid";
-    else if (newPaidAmount > 0) paymentStatus = "Partial";
-
-    // Update invoice
-    invoice.paidAmount = newPaidAmount;
-    invoice.remainingAmount = newRemainingAmount;
-    invoice.paymentStatus = paymentStatus;
-    await invoice.save({ session });
-
-    // Record payment in a separate collection (optional)
-    const Payment = mongoose.models.Payment || mongoose.model("Payment", new mongoose.Schema({
-      companyId: { type: mongoose.Schema.Types.ObjectId, required: true },
-      invoiceId: { type: mongoose.Schema.Types.ObjectId, ref: "PurchaseInvoice", required: true },
-      amount: { type: Number, required: true },
-      paymentDate: { type: Date, default: Date.now },
-      paymentMethod: { type: String, enum: ["Cash", "Bank Transfer", "Cheque", "UPI"], default: "Bank Transfer" },
-      referenceNo: { type: String },
-      remarks: { type: String },
-      createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
-    }, { timestamps: true }));
-
-    await Payment.create([{
-      companyId: decoded.companyId,
-      invoiceId: invoice._id,
-      amount,
-      paymentDate: paymentDate || new Date(),
-      paymentMethod,
-      referenceNo,
-      remarks,
-      createdBy: decoded.userId,
-    }], { session });
-
-    await session.commitTransaction();
-    session.endSession();
-
-    // Auto accounting entry (if needed)
-    try {
-      await autoPaymentEntry({
-        companyId: decoded.companyId,
-        amount,
+      const paymentAmount = roundMoney(amount);
+      const outstanding = roundMoney(invoice.remainingAmount ?? (Number(invoice.grandTotal || 0) - Number(invoice.paidAmount || 0)));
+      if (paymentAmount - outstanding > 0.009) throw new Error("Payment amount exceeds the outstanding invoice balance");
+      const account = await resolvePaymentAccount(user.companyId, bankAccountId, method, session);
+      const [payment] = await Payment.create([{
+        companyId: user.companyId,
+        createdBy: user.id || user.userId,
+        type: "Payment",
+        paymentDate: paymentDate ? new Date(paymentDate) : new Date(),
+        amount: paymentAmount,
+        bankAccountId: account._id,
+        partyType: "Supplier",
         partyId: invoice.supplier,
-        partyName: invoice.supplierName,
-        referenceId: invoice._id,
-        referenceNumber: invoice.documentNumberPurchaseInvoice,
-        narration: `Payment against invoice ${invoice.documentNumberPurchaseInvoice}`,
-        date: paymentDate || new Date(),
-        createdBy: decoded.userId,
+        partyName: invoice.supplierName || "Supplier",
+        paymentMode: modeMap[method],
+        narration: remarks || `Payment against ${invoice.documentNumberPurchaseInvoice}`,
+        chequeNumber: method === "cheque" ? referenceNo || null : null,
+        utrNumber: method !== "cheque" ? referenceNo || null : null,
+        appliedInvoices: [{ invoiceId: invoice._id, invoiceNumber: invoice.documentNumberPurchaseInvoice, amount: paymentAmount }],
+      }], { session });
+
+      invoice.payments.push({
+        paymentId: payment._id, amount: paymentAmount, method, bankAccountId: account._id,
+        referenceNumber: referenceNo || null, paymentDate: payment.paymentDate, notes: remarks || null,
+        ...(method === "cheque" ? { chequeNumber: referenceNo || null } : { transactionId: referenceNo || null }),
       });
-    } catch (accErr) {
-      console.error("Accounting entry failed:", accErr);
-    }
+      invoice.paidAmount = roundMoney(Number(invoice.paidAmount || 0) + paymentAmount);
+      invoice.remainingAmount = Math.max(roundMoney(Number(invoice.grandTotal || 0) - invoice.paidAmount), 0);
+      invoice.paymentStatus = invoice.remainingAmount === 0 ? "Paid" : "Partial";
+      await invoice.save({ session });
 
-    return NextResponse.json({
-      success: true,
-      message: "Payment recorded successfully",
-      data: {
-        invoiceId: invoice._id,
-        paidAmount: invoice.paidAmount,
-        remainingAmount: invoice.remainingAmount,
-        paymentStatus: invoice.paymentStatus,
-      }
-    }, { status: 200 });
+      await autoPaymentEntry({
+        companyId: user.companyId, amount: paymentAmount, partyId: invoice.supplier,
+        partyName: invoice.supplierName || "Supplier", referenceId: payment._id,
+        referenceNumber: payment.paymentNumber, narration: payment.narration,
+        date: payment.paymentDate, createdBy: user.id || user.userId, paymentMode: method,
+        bankAccountId: account._id, bankAccountName: account.name,
+        chequeNumber: payment.chequeNumber || undefined, utrNumber: payment.utrNumber || undefined, session,
+      });
+      result = { payment, invoice };
+    });
 
+    return NextResponse.json({ success: true, message: "Payment recorded and posted to the ledger", data: {
+      payment: result.payment,
+      invoiceId: result.invoice._id, paidAmount: result.invoice.paidAmount,
+      remainingAmount: result.invoice.remainingAmount, paymentStatus: result.invoice.paymentStatus,
+    } }, { status: 201 });
   } catch (error) {
-    await session.abortTransaction();
-    session.endSession();
-    console.error(error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    console.error("Purchase payment posting failed:", error);
+    return NextResponse.json({ success: false, error: error.message }, { status: 400 });
+  } finally {
+    await session.endSession();
   }
 }
 
-// Optional: GET payment history for an invoice
 export async function GET(req) {
-  await dbConnect();
-  const token = getTokenFromHeader(req);
-  if (!token) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  const decoded = verifyJWT(token);
-  if (!decoded?.companyId) return NextResponse.json({ error: "Invalid token" }, { status: 403 });
-
-  const { searchParams } = new URL(req.url);
-  const invoiceId = searchParams.get("invoiceId");
-  if (!invoiceId) return NextResponse.json({ error: "invoiceId required" }, { status: 400 });
-
-  const Payment = mongoose.models.Payment;
-  if (!Payment) return NextResponse.json({ error: "Payment model not registered" }, { status: 500 });
-
-  const payments = await Payment.find({ invoiceId, companyId: decoded.companyId }).sort({ paymentDate: -1 });
-  return NextResponse.json({ success: true, data: payments });
+  try {
+    await dbConnect();
+    const user = verifyJWT(getTokenFromHeader(req));
+    if (!user?.companyId) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    const invoiceId = new URL(req.url).searchParams.get("invoiceId");
+    if (!mongoose.Types.ObjectId.isValid(invoiceId)) return NextResponse.json({ success: false, error: "invoiceId required" }, { status: 400 });
+    const payments = await Payment.find({ companyId: user.companyId, type: "Payment", "appliedInvoices.invoiceId": invoiceId }).sort({ paymentDate: -1 });
+    return NextResponse.json({ success: true, data: payments });
+  } catch (error) {
+    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+  }
 }

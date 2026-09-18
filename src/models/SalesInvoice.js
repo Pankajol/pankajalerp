@@ -64,24 +64,26 @@ const InvoiceItemSchema = new Schema({
 
 // Payment details sub‑schema
 const PaymentDetailsSchema = new Schema({
+  // Stable source id: each payment must create exactly one accounting entry.
+  paymentId: { type: Schema.Types.ObjectId, default: () => new mongoose.Types.ObjectId() },
   amount: { type: Number, required: true, default: 0 },
   method: {
     type: String,
     enum: ["cash", "bank", "upi", "card", "netbanking", "wallet", "cheque"],
     required: true,
   },
-  bankAccountId: { type: Schema.Types.ObjectId, ref: "AccountHead", default: null },
-  upiId: { type: String, default: null },
-  transactionId: { type: String, default: null },
-  paymentGateway: { type: String, default: null },
-  cardLast4Digits: { type: String, default: null },
-  cardNetwork: { type: String, enum: ["Visa", "Mastercard", "Amex", "RuPay", null], default: null },
-  chequeNumber: { type: String, default: null },
-  chequeDate: { type: Date, default: null },
-  bankName: { type: String, default: null },
-  referenceNumber: { type: String, default: null },
+  bankAccountId: { type: Schema.Types.ObjectId, ref: "AccountHead" },
+  upiId: { type: String },
+  transactionId: { type: String },
+  paymentGateway: { type: String },
+  cardLast4Digits: { type: String },
+  cardNetwork: { type: String, enum: ["Visa", "Mastercard", "Amex", "RuPay"] },
+  chequeNumber: { type: String },
+  chequeDate: { type: Date },
+  bankName: { type: String },
+  referenceNumber: { type: String },
   paymentDate: { type: Date, required: true, default: Date.now },
-  notes: { type: String, default: null },
+  notes: { type: String },
 }, { _id: false });
 
 // Main Sales Invoice Schema

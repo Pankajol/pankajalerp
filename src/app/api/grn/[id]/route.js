@@ -2,7 +2,7 @@
 
 import { NextResponse } from "next/server";
 import mongoose from "mongoose";
-import { v2 as cloudinary } from "cloudinary";
+import cloudinary from "@/lib/cloudinary";
 import formidable from "formidable";
 import { Readable } from "stream";
 import dbConnect from "@/lib/db";

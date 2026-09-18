@@ -14,6 +14,8 @@ import {
   RefreshCw,
   Boxes,
   Route,
+  ClipboardCheck,
+  ArrowUpRight,
 } from "lucide-react";
 import { toast } from "react-toastify";
 
@@ -24,11 +26,14 @@ export default function TextilesDashboard() {
     recipes: 0,
     stockItems: 0,
     pendingOrders: 0,
+    pendingQc: 0,
   });
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [recentOrders, setRecentOrders] = useState([]);
   const [lowStock, setLowStock] = useState([]);
+  const [charts, setCharts] = useState({ production: [], jobWork: [], quality: [], inventory: [] });
+  const [sources, setSources] = useState([]);
   const [error, setError] = useState(null);
 
   const fetchData = async (showToast = false) => {
@@ -38,57 +43,23 @@ export default function TextilesDashboard() {
       const token = localStorage.getItem("token");
       const headers = { headers: { Authorization: `Bearer ${token}` } };
 
-      const [itemsRes, ordersRes, recipesRes, stockRes] = await Promise.allSettled([
-        api.get("/items?isTextile=true", headers),
-        api.get("/ppc/production-orders?type=textile", headers),
-        api.get("/textiles/dyeing-recipes", headers),
-        api.get("/inventory?isTextile=true", headers),
-      ]);
-
-      const readList = (result) => {
-        if (result.status !== "fulfilled") return [];
-        const payload = result.value?.data;
-        return payload?.data || payload?.items || payload?.orders || payload?.inventory || [];
-      };
-      const items = readList(itemsRes);
-      const orders = readList(ordersRes);
-      const recipes = readList(recipesRes);
-      const stock = readList(stockRes);
-      const failedCount = [itemsRes, ordersRes, recipesRes, stockRes].filter(
-        (result) => result.status === "rejected"
-      ).length;
-      if (failedCount === 4) throw new Error("Textile services are unavailable");
-      if (failedCount) setError(`${failedCount} dashboard data source${failedCount > 1 ? "s" : ""} could not be loaded.`);
-
-      const pending = orders.filter(
-        (o) => o.status === "planned" || o.status === "in-progress"
-      ).length;
+      const response = await api.get("/textiles/dashboard", headers);
+      const data = response.data?.data;
+      if (!data) throw new Error(response.data?.message || "Textile dashboard data is unavailable");
 
       setStats({
-        products: items.length,
-        productionOrders: orders.length,
-        recipes: recipes.length,
-        stockItems: stock.length,
-        pendingOrders: pending,
+        products: data.summary.products,
+        productionOrders: data.summary.productionOrders,
+        recipes: data.summary.recipes,
+        stockItems: data.summary.availableTakas,
+        pendingOrders: data.summary.activeJobWork,
+        pendingQc: data.summary.pendingQc,
       });
 
-      setRecentOrders(orders.slice(0, 5));
-
-      // Low stock calculation
-      const lowStockItems = [];
-      items.forEach((item) => {
-        const stockItem = stock.find(
-          (s) => s.itemId === item._id || s.item === item._id
-        );
-        if (stockItem && stockItem.quantity < (item.reorderLevel || 0)) {
-          lowStockItems.push({
-            ...item,
-            stockQuantity: stockItem.quantity,
-            reorderLevel: item.reorderLevel || 0,
-          });
-        }
-      });
-      setLowStock(lowStockItems.slice(0, 5));
+      setRecentOrders(data.recentOrders || []);
+      setLowStock(data.lowStock || []);
+      setCharts(data.charts || { production: [], jobWork: [], quality: [], inventory: [] });
+      setSources(data.sources || []);
 
       if (showToast) {
         toast.success("✅ Dashboard refreshed!");
@@ -136,14 +107,14 @@ export default function TextilesDashboard() {
     return (
       <Link
         href={href}
-        className="bg-white rounded-2xl border border-gray-100 p-5 shadow-sm hover:shadow-xl transition-all hover:-translate-y-1 block"
+        className="group relative overflow-hidden bg-white rounded-2xl border border-slate-200 p-5 shadow-sm hover:shadow-lg hover:border-indigo-200 transition-all hover:-translate-y-0.5 block"
       >
         <div className="flex items-center justify-between">
           <div>
             <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">
               {title}
             </p>
-            <p className="text-2xl font-extrabold text-gray-900 mt-1">{value}</p>
+            <p className="text-3xl font-extrabold tracking-tight text-slate-900 mt-1">{value}</p>
             {subtitle && (
               <p className="text-xs text-gray-400 mt-0.5">{subtitle}</p>
             )}
@@ -154,19 +125,59 @@ export default function TextilesDashboard() {
             <Icon size={20} />
           </div>
         </div>
+        <ArrowUpRight size={15} className="absolute bottom-4 right-5 text-slate-300 transition group-hover:text-indigo-600" />
       </Link>
     );
   };
 
+  const StatusBars = ({ title, subtitle, items, color = "indigo" }) => {
+    const total = items.reduce((sum, item) => sum + Number(item.value || 0), 0);
+    const colors = {
+      indigo: "from-indigo-500 to-violet-500",
+      emerald: "from-emerald-500 to-teal-500",
+      amber: "from-amber-400 to-orange-500",
+      rose: "from-rose-500 to-pink-500",
+    };
+    return (
+      <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="mb-5 flex items-start justify-between gap-3">
+          <div>
+            <h3 className="font-bold text-slate-900">{title}</h3>
+            <p className="mt-0.5 text-xs text-slate-500">{subtitle}</p>
+          </div>
+          <span className="rounded-lg bg-slate-100 px-2.5 py-1 text-xs font-bold text-slate-600">{total}</span>
+        </div>
+        {items.length ? (
+          <div className="space-y-3">
+            {items.slice(0, 5).map((item, index) => (
+              <div key={`${item.label}-${index}`}>
+                <div className="mb-1.5 flex items-center justify-between gap-3 text-xs">
+                  <span className="truncate font-medium capitalize text-slate-600">{String(item.label).replaceAll("-", " ")}</span>
+                  <span className="font-bold text-slate-900">{item.value}</span>
+                </div>
+                <div className="h-2 overflow-hidden rounded-full bg-slate-100">
+                  <div className={`h-full rounded-full bg-gradient-to-r ${colors[color]}`} style={{ width: `${Math.max(8, Math.round((Number(item.value || 0) / Math.max(total, 1)) * 100))}%` }} />
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="flex h-[148px] items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50 px-5 text-center text-sm text-slate-400">No records available yet</div>
+        )}
+      </div>
+    );
+  };
+
   return (
-    <div className="p-8 font-sans bg-[#f2f5f9] min-h-screen">
+    <div className="min-h-screen bg-slate-50 p-4 font-sans md:p-8">
       {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
+      <div className="mb-6 rounded-3xl bg-gradient-to-br from-slate-950 via-indigo-950 to-indigo-800 p-6 shadow-xl md:p-8">
+      <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-gray-800 flex items-center gap-3">
+          <h1 className="text-3xl font-extrabold tracking-tight text-white flex items-center gap-3">
             <span className="text-3xl">🧵</span> Textiles Dashboard
           </h1>
-          <p className="text-gray-500 text-sm mt-0.5">
+          <p className="text-indigo-100 text-sm mt-0.5">
             Overview of yarn, fabric, production & quality
           </p>
         </div>
@@ -201,7 +212,7 @@ export default function TextilesDashboard() {
             <Plus size={12} /> New Order
           </Link>
         </div>
-      </div>
+      </div></div>
 
       {/* Error Banner */}
       {error && (
@@ -218,13 +229,13 @@ export default function TextilesDashboard() {
 
       {/* Stats Grid */}
       {loading && !error ? (
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-6">
-          {[...Array(5)].map((_, i) => (
+        <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-6 mb-6">
+          {[...Array(6)].map((_, i) => (
             <StatSkeleton key={i} />
           ))}
         </div>
       ) : (
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-6">
+        <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-6 mb-6">
           <StatCard
             title="Textile Products"
             value={stats.products}
@@ -238,7 +249,7 @@ export default function TextilesDashboard() {
             icon={Factory}
             color="amber"
             href="/admin/ppc/productionOrderPage?type=textile"
-            subtitle={`${stats.pendingOrders} Pending`}
+            subtitle={`${stats.pendingOrders} active job-work request(s)`}
           />
           <StatCard
             title="Dyeing Recipes"
@@ -248,11 +259,11 @@ export default function TextilesDashboard() {
             href="/admin/textiles/dyeing-recipes"
           />
           <StatCard
-            title="Stock Items"
+            title="Available Takas"
             value={stats.stockItems}
             icon={Layers}
             color="rose"
-            href="/admin/InventoryView?isTextile=true"
+            href="/admin/textiles/takas"
           />
           <StatCard
             title="Low Stock Alerts"
@@ -261,8 +272,52 @@ export default function TextilesDashboard() {
             color="blue"
             href="/admin/InventoryView?isTextile=true&lowStock=true"
           />
+          <StatCard
+            title="QC Attention"
+            value={stats.pendingQc}
+            icon={ClipboardCheck}
+            color="amber"
+            href="/admin/textiles/quality-inspection"
+            subtitle="Pending, hold or rework"
+          />
         </div>
       )}
+
+      {/* Live operational charts */}
+      <div className="mb-6 grid grid-cols-1 gap-5 xl:grid-cols-3">
+        <div className="xl:col-span-2 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 className="font-bold text-slate-900">Live operations overview</h2>
+              <p className="mt-0.5 text-xs text-slate-500">Status distribution from production, job work, quality and fabric rolls.</p>
+            </div>
+            <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">Live data</span>
+          </div>
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <StatusBars title="Production status" subtitle="All production sources" items={charts.production} color="indigo" />
+            <StatusBars title="Job work status" subtitle="External processing" items={charts.jobWork} color="amber" />
+            <StatusBars title="Quality status" subtitle="Inspection queue" items={charts.quality} color="rose" />
+            <StatusBars title="Fabric roll status" subtitle="Taka availability" items={charts.inventory} color="emerald" />
+          </div>
+        </div>
+
+        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <h2 className="font-bold text-slate-900">Data coverage</h2>
+          <p className="mt-0.5 text-xs text-slate-500">Every saved source included in this dashboard.</p>
+          <div className="mt-5 space-y-2">
+            {sources.map((source) => (
+              <Link key={source.label} href={source.href} className="group flex items-center justify-between rounded-xl border border-slate-100 px-3 py-3 transition hover:border-indigo-100 hover:bg-indigo-50/50">
+                <span className="text-sm font-medium text-slate-600 group-hover:text-indigo-700">{source.label}</span>
+                <span className="rounded-lg bg-slate-100 px-2 py-0.5 text-xs font-bold text-slate-700 group-hover:bg-white">{source.value}</span>
+              </Link>
+            ))}
+            {!sources.length && !loading && <p className="py-10 text-center text-sm text-slate-400">No data sources found.</p>}
+          </div>
+          <Link href="/admin/textiles/flow" className="mt-5 flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white transition hover:bg-indigo-700">
+            View complete textile flow <ArrowUpRight size={15} />
+          </Link>
+        </div>
+      </div>
 
       {/* Recent Orders & Low Stock */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -309,16 +364,16 @@ export default function TextilesDashboard() {
                 {recentOrders.map((order) => (
                   <Link
                     key={order._id}
-                    href={`/admin/ppc/productionOrderPage/${order._id}/jobcards`}
+                    href={order.href || `/admin/ppc/productionOrderPage/${order._id}/jobcards`}
                     className="flex items-center justify-between p-3 rounded-xl hover:bg-indigo-50/50 transition-colors"
                   >
                     <div>
                       <p className="font-semibold text-gray-800 text-sm">
-                        {order.orderNumber}
+                        {order.displayNumber || order.orderNumber}
                       </p>
                       <p className="text-xs text-gray-400">
-                        {order.item?.itemName || "N/A"} × {order.quantity}{" "}
-                        {order.unit}
+                        {order.displayItem || order.item?.itemName || "Product"} × {order.displayQuantity ?? order.quantity ?? 0}
+                        {order.unit ? ` ${order.unit}` : ""}
                       </p>
                     </div>
                     <span

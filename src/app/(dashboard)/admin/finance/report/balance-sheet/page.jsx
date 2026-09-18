@@ -6,6 +6,7 @@ import {
 } from "lucide-react";
 import html2pdf from "html2pdf.js";
 import * as XLSX from "xlsx";
+import { getFiscalYear, getFiscalYearOptions } from "@/lib/fiscalYear";
 
 const fmtINR = (n) =>
   new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(n || 0);
@@ -220,7 +221,8 @@ export default function BalanceSheetPage() {
   const [ratios, setRatios] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [fiscalYear, setFiscalYear] = useState(`${new Date().getFullYear() - 1}-${String(new Date().getFullYear()).slice(2)}`);
+  const [fiscalYear, setFiscalYear] = useState(() => getFiscalYear());
+  const fiscalYearOptions = useMemo(() => getFiscalYearOptions(), []);
   const [asOnDate, setAsOnDate] = useState("");
   const [compareWith, setCompareWith] = useState("");
   const [hideZero, setHideZero] = useState(false);
@@ -305,8 +307,9 @@ export default function BalanceSheetPage() {
           <div className="mt-6 bg-white p-4 rounded-xl shadow-sm border border-gray-200">
             <div className="flex flex-wrap gap-4 items-end">
               <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1">Fiscal Year</label>
+                <label className="block text-xs font-medium text-gray-500 mb-1">Financial Year</label>
                 <select value={fiscalYear} onChange={e => setFiscalYear(e.target.value)} className="bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm">
+                  {fiscalYearOptions.map(({ value, label }) => <option key={value} value={value}>{label}</option>)}
                   {[2022, 2023, 2024, 2025, 2026].map(y => <option key={y} value={`${y}-${String(y + 1).slice(2)}`}>{y}–{String(y + 1).slice(2)}</option>)}
                 </select>
               </div>
@@ -318,6 +321,7 @@ export default function BalanceSheetPage() {
                 <label className="block text-xs font-medium text-gray-500 mb-1 flex items-center gap-1"><Filter size={12} /> Compare With</label>
                 <select value={compareWith} onChange={e => setCompareWith(e.target.value)} className="bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm">
                   <option value="">None</option>
+                  {fiscalYearOptions.filter(({ value }) => value !== fiscalYear).map(({ value, label }) => <option key={value} value={value}>{label}</option>)}
                   {[2021, 2022, 2023, 2024].map(y => <option key={y} value={`${y}-${String(y + 1).slice(2)}`}>{y}–{String(y + 1).slice(2)}</option>)}
                 </select>
               </div>

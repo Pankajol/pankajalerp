@@ -3,6 +3,7 @@ import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import { RefreshCw, Download, Printer, Search, EyeOff, Calendar, ChevronRight, ChevronDown, X } from "lucide-react";
 import * as XLSX from "xlsx";
 import html2pdf from "html2pdf.js";
+import { getFiscalYear, getFiscalYearOptions } from "@/lib/fiscalYear";
 
 const fmtINR = (n) => new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(n || 0);
 
@@ -13,7 +14,9 @@ const PLTreeNode = ({ node, level = 0, onToggle, expandedNodes, hideZero, search
   const hasChildren = node.children && node.children.length > 0;
   const isExpanded = expandedNodes[node._id];
   const paddingLeft = level * 24;
-  const matchesSearch = searchTerm && (node.name || "").toLowerCase().includes(searchTerm.toLowerCase());
+  const matchesSearch = searchTerm && [node.name, node.code]
+    .filter(Boolean)
+    .some((value) => String(value).toLowerCase().includes(searchTerm.toLowerCase()));
   if (hideZero && Math.abs(node.closingBalance || 0) === 0 && !hasChildren && !matchesSearch) return null;
 
   return (
@@ -59,7 +62,8 @@ const PLSection = ({ title, items, total, color, hideZero, searchTerm, onToggleS
     if (!term) return nodes;
     const lower = term.toLowerCase();
     const filter = (node) => {
-      const matches = (node.name||"").toLowerCase().includes(lower);
+      const matches = [node.name, node.code].filter(Boolean)
+        .some((value) => String(value).toLowerCase().includes(lower));
       const children = node.children?.map(filter).filter(Boolean) || [];
       if (matches || children.length) return { ...node, children };
       return null;
@@ -131,7 +135,8 @@ export default function ProfitLossPage() {
   const [totals, setTotals] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [fiscalYear, setFiscalYear] = useState(`${new Date().getFullYear()-1}-${String(new Date().getFullYear()).slice(2)}`);
+  const [fiscalYear, setFiscalYear] = useState(() => getFiscalYear());
+  const fiscalYearOptions = useMemo(() => getFiscalYearOptions(), []);
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
   const [hideZero, setHideZero] = useState(false);
@@ -200,8 +205,9 @@ export default function ProfitLossPage() {
           <div className="mt-6 bg-white p-4 rounded-xl shadow-sm border border-gray-200">
             <div className="flex flex-wrap gap-4 items-end">
               <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1">Fiscal Year</label>
+                <label className="block text-xs font-medium text-gray-500 mb-1">Financial Year</label>
                 <select value={fiscalYear} onChange={e => setFiscalYear(e.target.value)} className="bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm">
+                  {fiscalYearOptions.map(({ value, label }) => <option key={value} value={value}>{label}</option>)}
                   {[2022, 2023, 2024, 2025, 2026].map(y => <option key={y} value={`${y}-${String(y + 1).slice(2)}`}>{y}–{String(y + 1).slice(2)}</option>)}
                 </select>
               </div>

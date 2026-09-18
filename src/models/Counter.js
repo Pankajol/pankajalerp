@@ -5,6 +5,7 @@ const CounterSchema = new mongoose.Schema({
   companyId: { type: mongoose.Schema.Types.ObjectId, ref: 'Company', required: true },
   id: { type: String, required: true }, // example: "PurchaseOrder"
   seq: { type: Number, default: 0 },
+  prefix: { type: String, trim: true, uppercase: true },
 });
 
 // Ensure uniqueness per company and counter ID

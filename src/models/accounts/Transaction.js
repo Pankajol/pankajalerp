@@ -104,6 +104,15 @@ const TransactionSchema = new mongoose.Schema({
     type: String,
   }, // Invoice number, PO number etc.
 
+  // A reversal is a new, balanced journal that preserves the audit trail of
+  // the original posting. It never reuses the source reference id.
+  reversalOf: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "Transaction",
+    default: null,
+  },
+  isReversal: { type: Boolean, default: false },
+
   // ── Party (Customer or Supplier) ─────────────────────────
   partyType: {
     type: String,
@@ -189,6 +198,11 @@ TransactionSchema.index({ companyId: 1, partyId: 1 });
 TransactionSchema.index({ companyId: 1, fiscalYear: 1 });
 TransactionSchema.index({ companyId: 1, transactionNumber: 1 }, { unique: true });
 TransactionSchema.index({ referenceId: 1 }, { sparse: true });
+TransactionSchema.index(
+  { companyId: 1, type: 1, referenceId: 1 },
+  { unique: true, partialFilterExpression: { referenceId: { $type: "objectId" } } }
+);
+TransactionSchema.index({ companyId: 1, reversalOf: 1 }, { sparse: true });
 
 export default mongoose.models.Transaction ||
   mongoose.model("Transaction", TransactionSchema);
